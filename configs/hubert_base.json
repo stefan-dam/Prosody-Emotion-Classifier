@@ -1,0 +1,9 @@
+{
+  "model_name": "superb/hubert-base-superb-er",
+  "sample_rate": 16000,
+  "max_seconds": 3,
+  "batch_size": 2,
+  "learning_rate": 1e-5,
+  "epochs": 10,
+  "label_set": ["neutral","happy","angry","sad","disgust","fear","excited"]
+}

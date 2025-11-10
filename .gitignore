@@ -1,0 +1,18 @@
+# Python cache / environment
+__pycache__/
+*.pyc
+.venv/
+*.ipynb_checkpoints
+
+# Model outputs
+models/
+
+# Data handling
+data/**/*
+!data/
+!data/**/metadata.csv
+!data/**/README.md
+
+# Large files
+*.zip
+*.wav

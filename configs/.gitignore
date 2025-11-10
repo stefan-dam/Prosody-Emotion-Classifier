@@ -1,0 +1,6 @@
+*.zip
+__pycache__/
+*.pyc
+.venv/
+models/
+data/**/wav/
