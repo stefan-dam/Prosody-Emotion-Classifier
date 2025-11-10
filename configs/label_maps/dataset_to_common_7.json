@@ -1,0 +1,29 @@
+{
+  "RAVDESS": {
+    "neutral": "neutral",
+    "calm": "neutral",
+    "happy": "happy",
+    "sad": "sad",
+    "angry": "angry",
+    "fearful": "fear",
+    "disgust": "disgust",
+    "surprised": "excited"
+  },
+  "CREMAD": {
+    "NEU": "neutral",
+    "HAP": "happy",
+    "ANG": "angry",
+    "SAD": "sad",
+    "FEA": "fear",
+    "DIS": "disgust"
+  },
+  "IEMOCAP": {
+    "neu": "neutral",
+    "hap": "happy",
+    "ang": "angry",
+    "sad": "sad",
+    "fear": "fear",
+    "disgust": "disgust",
+    "exc": "excited"
+  }
+}
