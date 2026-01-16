@@ -58,7 +58,7 @@ This will install:
 - Scikit-learn
 - And other dependencies
 
-**Note:** If you have a CUDA-capable GPU and want to use it for training, you may need to install PyTorch with CUDA support separately. Visit [PyTorch's website](https://pytorch.org/get-started/locally/) for CUDA-enabled installation instructions.
+**Note:** If you have a CUDA-capable GPU and want to use it for training, you may need to install PyTorch with CUDA support separately. 
 
 ### Step 4: Download Datasets
 
