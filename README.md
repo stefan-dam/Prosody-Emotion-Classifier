@@ -181,7 +181,7 @@ The trained model will be saved in:
 
 Training outputs checkpoints after each epoch, and the best model (based on F1 score on validation set) is saved.
 
-**Note:** Training can take several hours depending on your hardware. The model uses HuBERT-base which requires significant computational resources.
+**Note:** Training can take several hours.
 
 ## Running Inference
 
@@ -224,9 +224,6 @@ Prosody-Emotion-Classifier/
 ```
 
 ## Troubleshooting
-
-### Issue: "No module named 'torch'"
-**Solution:** Ensure you've activated your virtual environment and installed all requirements.
 
 ### Issue: "FileNotFoundError: data/RAVDESS/metadata.csv"
 **Solution:** Run the metadata generation scripts (Step 5) after downloading and placing datasets.
