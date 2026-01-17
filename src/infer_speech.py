@@ -3,6 +3,7 @@ from transformers import AutoFeatureExtractor, HubertForSequenceClassification
 
 SR = 16000
 MODEL_DIR = "models/RAVDESS_hubert_cls"
+BASE_MODEL = "superb/hubert-base-superb-er"
 LABELS = ["neutral","happy","angry","sad","disgust","fear","excited"]
 
 def resample_to_16k(x, sr):
@@ -31,7 +32,7 @@ def read16k(path):
         x = np.pad(x, (0, max_len - len(x)), mode="constant")
     return x.astype(np.float32, copy=False)
 
-extractor = AutoFeatureExtractor.from_pretrained(MODEL_DIR, sampling_rate=SR)
+extractor = AutoFeatureExtractor.from_pretrained(BASE_MODEL, sampling_rate=SR)
 model = HubertForSequenceClassification.from_pretrained(MODEL_DIR)
 model.eval()
 model.to("cpu")
