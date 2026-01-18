@@ -1,7 +1,7 @@
 {
   "model_name": "superb/hubert-base-superb-er",
   "sample_rate": 16000,
-  "max_seconds": 2,
+  "max_seconds": 5,
   "batch_size": 30,
   "learning_rate": 1e-5,
   "epochs": 100,
