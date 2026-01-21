@@ -29,3 +29,34 @@ Latest changes and training handoff notes
 - If load_best_model_at_end is true, save_strategy and evaluation_strategy must match.
 - Checkpoints auto-pruned by save_total_limit; if disk space is tight, lower to 1 or increase save_steps.
 - Final metrics are printed at end and written to trainer_state.json and all_results.json.
+
+5) Label mapping details (common 7-class set)
+Common labels: neutral, happy, angry, sad, fear, disgust, excited
+
+RAVDESS raw -> common:
+- neutral -> neutral
+- calm -> neutral
+- happy -> happy
+- sad -> sad
+- angry -> angry
+- fearful -> fear
+- disgust -> disgust
+- surprised -> excited
+
+CREMAD raw -> common:
+- NEU -> neutral
+- HAP -> happy
+- ANG -> angry
+- SAD -> sad
+- FEA -> fear
+- DIS -> disgust
+(no excited in CREMAD)
+
+IEMOCAP raw -> common:
+- neu -> neutral
+- hap -> happy
+- ang -> angry
+- sad -> sad
+- fear -> fear
+- disgust -> disgust
+- exc -> excited
