@@ -1,0 +1,31 @@
+Latest changes and training handoff notes
+
+1) Code changes (summary)
+- src/train_hubert_cls.py: supports multi-dataset training via --datasets (RAVDESS/CREMAD/IEMOCAP).
+- Dataset-specific label mapping to common label set; validates missing labels.
+- Concatenates train/val/test across datasets and tags output dir as models/RAVDESS+CREMAD_hubert_cls.
+- Config-driven eval batch size, eval accumulation, fp16/bf16, gradient checkpointing, logging_steps, save_steps, max_steps.
+- Adds test-split evaluation after training, optional skip_eval/skip_save, and --resume_from_checkpoint.
+- Auto-disables fp16 if CUDA is unavailable.
+
+2) Config changes (configs/hubert_colab.json)
+- Memory-safe defaults: batch_size 2, grad_accum 4, eval_batch_size 1, eval_accumulation_steps 512.
+- Frequent checkpointing: save_strategy "steps", save_steps 200, save_total_limit 2.
+- Logging reduced: logging_steps 50.
+- fp16 currently false for CPU safety; set true only if CUDA is available.
+
+3) Training quickstart (local)
+- Activate venv and install requirements.txt.
+- Run:
+  PYTHONUNBUFFERED=1 USE_TF=0 python -u src/train_hubert_cls.py \
+    --datasets RAVDESS CREMAD --config configs/hubert_colab.json | tee train.log
+- Resume:
+  latest_ckpt=$(ls -d models/RAVDESS+CREMAD_hubert_cls/checkpoint-* | sort -V | tail -n 1)
+  PYTHONUNBUFFERED=1 USE_TF=0 python -u src/train_hubert_cls.py \
+    --datasets RAVDESS CREMAD --config configs/hubert_colab.json \
+    --resume_from_checkpoint "$latest_ckpt"
+
+4) Notes
+- If load_best_model_at_end is true, save_strategy and evaluation_strategy must match.
+- Checkpoints auto-pruned by save_total_limit; if disk space is tight, lower to 1 or increase save_steps.
+- Final metrics are printed at end and written to trainer_state.json and all_results.json.

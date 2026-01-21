@@ -1,0 +1,19 @@
+{
+  "model_name": "superb/hubert-base-superb-er",
+  "sample_rate": 16000,
+  "max_seconds": 5,
+  "batch_size": 2,
+  "gradient_accumulation_steps": 4,
+  "eval_batch_size": 1,
+  "eval_accumulation_steps": 512,
+  "fp16": false,
+  "gradient_checkpointing": true,
+  "learning_rate": 1e-05,
+  "logging_steps": 50,
+  "epochs": 50,
+  "evaluation_strategy": "epoch",
+  "save_strategy": "steps",
+  "save_steps": 200,
+  "save_total_limit": 2,
+  "load_best_model_at_end": false
+}
