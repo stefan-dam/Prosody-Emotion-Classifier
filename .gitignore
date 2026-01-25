@@ -17,3 +17,7 @@ data/**/*
 *.zip
 *.wav
 .DS_Store
+venv/
+train.log
+configs/splits/*.json
+data/prosody_cache/
