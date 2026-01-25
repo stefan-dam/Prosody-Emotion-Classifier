@@ -21,3 +21,8 @@ venv/
 train.log
 configs/splits/*.json
 data/prosody_cache/
+
+venv/
+train.log
+configs/splits/*.json
+data/prosody_cache/
