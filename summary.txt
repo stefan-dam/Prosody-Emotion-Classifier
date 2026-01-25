@@ -1,0 +1,51 @@
+Prosody-Emotion-Classifier Setup Summary
+
+Goal
+- Maximize real-world emotion classification accuracy using HuBERT fine-tuning on RAVDESS + CREMAD.
+
+Model
+- Architecture: HuBERT encoder + sequence classification head (Transformers AutoModelForAudioClassification).
+- Max-accuracy checkpoint: `superb/hubert-large-superb-er` (used in `configs/hubert_colab.json`).
+- Balanced checkpoint: `superb/hubert-base-superb-er` (used in `configs/hubert_base.json`).
+- Accuracy levers enabled: weighted layer sum, SpecAugment, mild waveform augmentation, random cropping, short feature-extractor freeze.
+
+Data Format (required by HuBERT)
+- Mono waveform, float32, 16 kHz, no NaNs.
+- Fixed-length windows via `max_seconds`, with attention masks for padding.
+
+Datasets + Labels
+- RAVDESS and CREMAD are mapped to a unified 7-class label set.
+- Label mapping in `configs/label_maps/dataset_to_common_7.json`.
+
+Splits (no leakage)
+- Speaker-disjoint train/val/test splits with fixed seed.
+- Split files: `configs/splits/RAVDESS_splits.json`, `configs/splits/CREMAD_splits.json`.
+- Split validation errors out if any speaker leakage is detected.
+
+Training Pipeline
+- Configurable via `configs/hubert_colab.json` (default).
+- Key settings:
+  - `learning_rate: 1e-5`, `epochs: 50`
+  - `evaluation_strategy/save_strategy: steps`
+  - `save_steps: 500`, `eval_steps: 500`, `logging_steps: 200`
+  - `keep_best_n: 3` (keeps top-3 checkpoints by eval accuracy)
+  - `balance_datasets: true` (equalizes dataset contributions)
+
+Augmentation (enabled by default)
+- Random cropping for long clips (`random_crop: true`).
+- Mild gain and noise with low probability for robustness:
+  - gain: +/-2 dB, prob 0.3
+  - noise: SNR 30 dB, prob 0.3
+
+Logging & Checkpoints
+- Logs to `train.log` in repo root.
+- Each log line includes loss and/or eval accuracy/F1/UAR.
+- Checkpoint log lines include the eval accuracy of each checkpoint.
+- Final test metrics are logged and written to `models/.../test_report.json`.
+
+Evaluation Outputs
+- Per-class recall, per-dataset accuracy/F1/UAR, per-speaker accuracy.
+- Confusion matrix for test split.
+
+How to Run
+- Follow `steps.txt` in order (data -> metadata -> splits -> training).

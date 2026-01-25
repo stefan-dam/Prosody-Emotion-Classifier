@@ -1,0 +1,38 @@
+1) Create and activate a Python environment, then install dependencies:
+   - `python -m venv venv`
+   - `source venv/bin/activate`
+   - `pip install -r requirements.txt`
+
+2) Download datasets and place them under `data/` with this structure:
+   - RAVDESS: `data/RAVDESS/Actor_01/*.wav`, `data/RAVDESS/Actor_02/*.wav`, ...
+   - CREMAD: `data/CREMAD/*.wav`
+
+3) Generate metadata CSVs (creates `metadata.csv` for each dataset):
+   - `python src/make_metadata_ravdess.py`
+   - `python src/make_metadata_cremad.py`
+
+4) Generate speaker-disjoint splits (reproducible; no speaker leakage):
+   - `python src/make_splits.py RAVDESS --seed 42`
+   - `python src/make_splits.py CREMAD --seed 42`
+
+5) Train the combined HuBERT model (logs to `train.log` in repo root):
+   - Max accuracy (strong GPU):  
+     `python src/train_hubert_cls.py --datasets RAVDESS CREMAD --config configs/hubert_colab.json`
+   - Balanced compute/accuracy (smaller model, faster):  
+     `python src/train_hubert_cls.py --datasets RAVDESS CREMAD --config configs/hubert_base.json`
+   - Quick smoke test (very fast sanity check):  
+     `python src/train_hubert_cls.py --datasets RAVDESS CREMAD --config configs/hubert_smoke.json`
+
+6) After training completes:
+   - Best checkpoints are kept automatically (top-3 by eval accuracy) in `models/RAVDESS+CREMAD_hubert_cls/`
+   - Final test diagnostics are saved to `models/RAVDESS+CREMAD_hubert_cls/test_report.json`
+   - Model is saved to `models/RAVDESS+CREMAD_hubert_cls/` (see `saved_model=...` in `train.log`)
+
+7) Optional: train the prosody-only baseline (sanity check, not the max-accuracy model):
+   - `python src/train_prosody_cls.py --datasets RAVDESS CREMAD --config configs/prosody_base.json`
+
+Notes:
+   - `configs/hubert_colab.json` includes accuracy-focused settings:
+     - Weighted layer sum for HuBERT, SpecAugment, mild waveform augmentation, random cropping,
+       and a short feature-extractor freeze for stabilization.
+   - If you need to reduce memory, lower `batch_size` or increase `gradient_accumulation_steps`.

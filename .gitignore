@@ -16,3 +16,4 @@ data/**/*
 # Large files
 *.zip
 *.wav
+.DS_Store

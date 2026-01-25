@@ -1,15 +1,21 @@
+import argparse
 import pandas as pd
 import json
 import numpy as np
 import os
-import sys
 
-dataset = sys.argv[1]  # e.g. "RAVDESS"
+ap = argparse.ArgumentParser()
+ap.add_argument("dataset", help='Dataset name (e.g., "RAVDESS")')
+ap.add_argument("--seed", type=int, default=42, help="Random seed for speaker split")
+args = ap.parse_args()
+
+dataset = args.dataset  # e.g. "RAVDESS"
 csv_path = f"data/{dataset}/metadata.csv"
 df = pd.read_csv(csv_path)
 
-speakers = df["speaker_id"].unique()
-np.random.shuffle(speakers)
+speakers = np.array(sorted(df["speaker_id"].unique()))
+rng = np.random.default_rng(args.seed)
+rng.shuffle(speakers)
 
 n = len(speakers)
 n_train = int(0.7 * n)
@@ -36,3 +42,4 @@ with open(out_path, "w") as f:
     json.dump(splits, f, indent=2)
 
 print(f"Saved split file: {out_path}")
+print(f"Split seed: {args.seed}")

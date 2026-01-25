@@ -1,5 +1,6 @@
 import json, pandas as pd, soundfile as sf, numpy as np
 from pathlib import Path
+from scipy.signal import resample_poly
 
 def load_split_table(dataset_name):
     split_path = Path(f"configs/splits/{dataset_name}_splits.json")
@@ -14,8 +15,10 @@ def load_label_maps():
 def read_wav_16k(path, target_sr=16000):
     audio, sr = sf.read(path)
     if sr != target_sr:
-        import librosa
-        audio = librosa.resample(audio.astype(float), orig_sr=sr, target_sr=target_sr)
+        g = np.gcd(sr, target_sr)
+        up = target_sr // g
+        down = sr // g
+        audio = resample_poly(audio.astype(float), up=up, down=down)
     # mono
     if audio.ndim > 1: audio = np.mean(audio, axis=1)
     return audio

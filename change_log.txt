@@ -1,0 +1,12 @@
+- Added deterministic, seed-controlled speaker splits in `src/make_splits.py` for reproducibility.
+- Fixed HuBERT training masking and added gradient-accumulation support plus UAR/test reporting in `src/train_hubert_cls.py`.
+- Added explicit prosody feature extraction and a prosody-only training baseline with config in `src/prosody_features.py`, `src/train_prosody_cls.py`, and `configs/prosody_base.json`.
+- Added accuracy-focused logging, dataset validation/balancing, label distribution reporting, and top-3 checkpoint retention in `src/train_hubert_cls.py`.
+- Updated HuBERT configs for step-based evaluation/saving, top-3 checkpointing, and root log output in `configs/hubert_colab.json` and `configs/hubert_base.json`.
+- Added `steps.txt` with end-to-end training instructions starting from an empty `data/` directory.
+- Added stricter split validation (speaker leakage check), aligned eval/save enforcement for top-3 checkpoints, and log final test metrics/model save to `train.log` in `src/train_hubert_cls.py`.
+- Fixed JSON logging for label distributions and test metrics to avoid numpy serialization errors in `src/train_hubert_cls.py`.
+- Added accuracy-focused HuBERT options (weighted layer sum, SpecAugment tuning, mild waveform augmentation, random cropping, feature-extractor freeze) and related config support in `src/train_hubert_cls.py`.
+- Expanded `steps.txt` for a fully guided training workflow and added `summary.txt` for technical setup documentation.
+- Switched default training configs to the larger HuBERT ER checkpoint and increased compute-oriented settings for maximum accuracy in `configs/hubert_colab.json` and `configs/hubert_base.json`.
+- Restored `configs/hubert_base.json` as a balanced compute/accuracy option and updated docs to list training profiles.

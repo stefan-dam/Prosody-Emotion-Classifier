@@ -167,17 +167,23 @@ Once setup is complete, you can train the model on your chosen dataset(s):
 
 ### Train on RAVDESS:
 ```bash
-python src/train_hubert_cls.py --dataset RAVDESS --config configs/hubert_base.json
+python src/train_hubert_cls.py --datasets RAVDESS --config configs/hubert_base.json
 ```
 
 ### Train on CREMAD:
 ```bash
-python src/train_hubert_cls.py --dataset CREMAD --config configs/hubert_base.json
+python src/train_hubert_cls.py --datasets CREMAD --config configs/hubert_base.json
+```
+
+### Train on both (recommended for generalization):
+```bash
+python src/train_hubert_cls.py --datasets RAVDESS CREMAD --config configs/hubert_base.json
 ```
 
 The trained model will be saved in:
 - `models/RAVDESS_hubert_cls/` (for RAVDESS)
 - `models/CREMAD_hubert_cls/` (for CREMAD)
+- `models/RAVDESS+CREMAD_hubert_cls/` (for combined training)
 
 Training outputs checkpoints after each epoch, and the best model (based on F1 score on validation set) is saved.
 
@@ -188,7 +194,7 @@ Training outputs checkpoints after each epoch, and the best model (based on F1 s
 After training (or using a pre-trained model), you can run inference on audio files:
 
 ```bash
-python src/infer_speech.py <path_to_audio_file.wav>
+python src/infer_speech.py <path_to_audio_file.wav> --model_dir models/RAVDESS+CREMAD_hubert_cls --device cuda
 ```
 
 This will output:
@@ -198,7 +204,7 @@ This will output:
 
 **Example:**
 ```bash
-python src/infer_speech.py data/RAVDESS/Actor_01/03-01-01-01-01-01-01.wav
+python src/infer_speech.py data/RAVDESS/Actor_01/03-01-01-01-01-01-01.wav --model_dir models/RAVDESS_hubert_cls
 ```
 
 ## Project Structure
@@ -239,3 +245,6 @@ Prosody-Emotion-Classifier/
 1. Datasets are extracted correctly
 2. Files are in the correct directory structure
 3. File paths in metadata.csv are correct (they should be relative paths)
+
+### Issue: Extra unused classes (e.g., "excited") when training on CREMAD-only
+**Solution:** The training script now drops labels that are not present in the selected datasets; ensure you call it with `--datasets CREMAD` (or include RAVDESS/IEMOCAP to train an "excited" logit).
