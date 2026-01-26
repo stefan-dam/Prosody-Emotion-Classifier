@@ -54,7 +54,15 @@
    - Final test diagnostics are saved to `models/RAVDESS+CREMAD_hubert_cls/test_report.json`
    - Model is saved to `models/RAVDESS+CREMAD_hubert_cls/` (see `saved_model=...` in `train.log`)
 
-8) Optional: train the prosody-only baseline (sanity check, not the max-accuracy model):
+8) Resume training from a checkpoint (if interrupted):
+   - See what checkpoints exist:
+     - PowerShell: `dir .\models\RAVDESS+CREMAD_hubert_cls`
+     - Command Prompt: `dir models\RAVDESS+CREMAD_hubert_cls`
+   - Pick the folder named like `checkpoint-1500` (higher number = later).
+   - Run:
+     `python src/train_hubert_cls.py --datasets RAVDESS CREMAD --config configs/hubert_colab_safe.json --resume_from_checkpoint models\\RAVDESS+CREMAD_hubert_cls\\checkpoint-1500`
+
+9) Optional: train the prosody-only baseline (sanity check, not the max-accuracy model):
    - `python src/train_prosody_cls.py --datasets RAVDESS CREMAD --config configs/prosody_base.json`
 
 Notes:
