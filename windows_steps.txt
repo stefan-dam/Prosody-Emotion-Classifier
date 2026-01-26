@@ -19,6 +19,13 @@
    - Optional: select GPU 0 explicitly
      - PowerShell: `$env:CUDA_VISIBLE_DEVICES="0"`
      - Command Prompt: `set CUDA_VISIBLE_DEVICES=0`
+   - Friendly-mode limits (keeps PC responsive while training):
+     - Cap CPU threads:
+       - PowerShell: `$env:OMP_NUM_THREADS="4"; $env:MKL_NUM_THREADS="4"`
+       - Command Prompt: `set OMP_NUM_THREADS=4` and `set MKL_NUM_THREADS=4`
+     - Reduce CUDA memory fragmentation:
+       - PowerShell: `$env:PYTORCH_CUDA_ALLOC_CONF="max_split_size_mb:128,expandable_segments:True"`
+       - Command Prompt: `set PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:128,expandable_segments:True`
 
 3) Download datasets and place them under `data/` with this structure:
    - RAVDESS: `data/RAVDESS/Actor_01/*.wav`, `data/RAVDESS/Actor_02/*.wav`, ...
@@ -35,6 +42,8 @@
 6) Train the combined HuBERT model (logs to `train.log` in repo root):
    - Max accuracy (strong GPU):
      `python src/train_hubert_cls.py --datasets RAVDESS CREMAD --config configs/hubert_colab.json`
+   - Friendly mode (same HuBERT model, lighter on VRAM/CPU; best for shared PCs):
+     `python src/train_hubert_cls.py --datasets RAVDESS CREMAD --config configs/hubert_colab_safe.json`
    - Balanced compute/accuracy (smaller model, faster):
      `python src/train_hubert_cls.py --datasets RAVDESS CREMAD --config configs/hubert_base.json`
    - Quick smoke test (very fast sanity check):
