@@ -489,12 +489,12 @@ def main():
         if key in cfg:
             setattr(model_config, key, cfg[key])
 
+    model_config.num_labels = num_labels
+    model_config.label2id = label2id
+    model_config.id2label = id2label
     model = AutoModelForAudioClassification.from_pretrained(
         cfg["model_name"],
         config=model_config,
-        num_labels=num_labels,
-        label2id=label2id,
-        id2label=id2label,
         ignore_mismatched_sizes=True,
         low_cpu_mem_usage=False,
     )
