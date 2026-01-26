@@ -1,0 +1,56 @@
+1) Create and activate a Python environment, then install dependencies (Windows):
+   - Create venv:
+     - `python -m venv venv`
+   - Activate venv:
+     - PowerShell: `.\venv\Scripts\Activate.ps1`
+     - Command Prompt: `venv\Scripts\activate.bat`
+   - If PowerShell blocks activation, run once:
+     - `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`
+   - Install deps:
+     - `python -m pip install -r requirements.txt`
+
+2) GPU vs CPU setup (Windows-specific):
+   - CPU-only: nothing extra is required (the torch/torchaudio wheels from requirements are CPU builds).
+   - NVIDIA GPU (CUDA):
+     - Install the CUDA-enabled PyTorch wheels after step 1 so they overwrite CPU wheels.
+     - Use the official PyTorch install command for your CUDA version from the PyTorch website.
+   - Verify GPU is visible:
+     - `python -c "import torch; print(torch.cuda.is_available()); print(torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU only')"`
+   - Optional: select GPU 0 explicitly
+     - PowerShell: `$env:CUDA_VISIBLE_DEVICES="0"`
+     - Command Prompt: `set CUDA_VISIBLE_DEVICES=0`
+
+3) Download datasets and place them under `data/` with this structure:
+   - RAVDESS: `data/RAVDESS/Actor_01/*.wav`, `data/RAVDESS/Actor_02/*.wav`, ...
+   - CREMAD: `data/CREMAD/*.wav`
+
+4) Generate metadata CSVs (creates `metadata.csv` for each dataset):
+   - `python src/make_metadata_ravdess.py`
+   - `python src/make_metadata_cremad.py`
+
+5) Generate speaker-disjoint splits (reproducible; no speaker leakage):
+   - `python src/make_splits.py RAVDESS --seed 42`
+   - `python src/make_splits.py CREMAD --seed 42`
+
+6) Train the combined HuBERT model (logs to `train.log` in repo root):
+   - Max accuracy (strong GPU):
+     `python src/train_hubert_cls.py --datasets RAVDESS CREMAD --config configs/hubert_colab.json`
+   - Balanced compute/accuracy (smaller model, faster):
+     `python src/train_hubert_cls.py --datasets RAVDESS CREMAD --config configs/hubert_base.json`
+   - Quick smoke test (very fast sanity check):
+     `python src/train_hubert_cls.py --datasets RAVDESS CREMAD --config configs/hubert_smoke.json`
+
+7) After training completes:
+   - Best checkpoints are kept automatically (top-3 by eval accuracy) in `models/RAVDESS+CREMAD_hubert_cls/`
+   - Final test diagnostics are saved to `models/RAVDESS+CREMAD_hubert_cls/test_report.json`
+   - Model is saved to `models/RAVDESS+CREMAD_hubert_cls/` (see `saved_model=...` in `train.log`)
+
+8) Optional: train the prosody-only baseline (sanity check, not the max-accuracy model):
+   - `python src/train_prosody_cls.py --datasets RAVDESS CREMAD --config configs/prosody_base.json`
+
+Notes:
+   - `configs/hubert_colab.json` includes accuracy-focused settings:
+     - Weighted layer sum for HuBERT, SpecAugment, mild waveform augmentation, random cropping,
+       and a short feature-extractor freeze for stabilization.
+   - If you need to reduce memory (especially on CPU), lower `batch_size` or increase
+     `gradient_accumulation_steps` in the chosen config file.
