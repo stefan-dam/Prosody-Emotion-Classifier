@@ -192,15 +192,25 @@ class BestCheckpointCallback(TrainerCallback):
         self.maximize = maximize
         self.log_path = log_path
         self.last_metrics = None
+        self.last_train_loss = None
         self.best = []
+
+    def on_log(self, args, state, control, logs=None, **kwargs):
+        if logs and "loss" in logs:
+            self.last_train_loss = float(logs["loss"])
 
     def on_evaluate(self, args, state, control, metrics=None, **kwargs):
         self.last_metrics = metrics or {}
 
     def on_save(self, args, state, control, **kwargs):
-        if not self.last_metrics or self.metric_key not in self.last_metrics:
-            return
-        metric_val = float(self.last_metrics[self.metric_key])
+        if self.metric_key in ("train_loss", "loss"):
+            if self.last_train_loss is None:
+                return
+            metric_val = float(self.last_train_loss)
+        else:
+            if not self.last_metrics or self.metric_key not in self.last_metrics:
+                return
+            metric_val = float(self.last_metrics[self.metric_key])
         ckpt_dir = os.path.join(args.output_dir, f"{PREFIX_CHECKPOINT_DIR}-{state.global_step}")
         self.best.append((metric_val, ckpt_dir))
         self.best = sorted(self.best, key=lambda x: x[0], reverse=self.maximize)
@@ -210,6 +220,27 @@ class BestCheckpointCallback(TrainerCallback):
                 shutil.rmtree(rm_path)
         if self.log_path:
             _log_line(self.log_path, f"checkpoint={ckpt_dir} {self.metric_key}={metric_val:.6f}")
+
+class LossCheckpointCallback(TrainerCallback):
+    def __init__(self, output_dir, log_path=None, filename="train_loss.json"):
+        self.output_dir = output_dir
+        self.log_path = log_path
+        self.filename = filename
+        self.last_train_loss = None
+
+    def on_log(self, args, state, control, logs=None, **kwargs):
+        if logs and "loss" in logs:
+            self.last_train_loss = float(logs["loss"])
+
+    def on_save(self, args, state, control, **kwargs):
+        if self.last_train_loss is None:
+            return
+        ckpt_dir = os.path.join(args.output_dir, f"{PREFIX_CHECKPOINT_DIR}-{state.global_step}")
+        meta = {"step": int(state.global_step), "train_loss": float(self.last_train_loss)}
+        Path(ckpt_dir).mkdir(parents=True, exist_ok=True)
+        (Path(ckpt_dir) / self.filename).write_text(json.dumps(meta, indent=2))
+        if self.log_path:
+            _log_line(self.log_path, f"checkpoint={ckpt_dir} train_loss={self.last_train_loss:.6f}")
 
 def _freeze_feature_extractor(model):
     if hasattr(model, "freeze_feature_encoder"):
@@ -383,6 +414,7 @@ def main():
     grad_accum_steps = int(cfg.get("gradient_accumulation_steps", 1))
     seed = int(cfg.get("seed", 42))
     log_path = cfg.get("log_path", "train.log")
+    train_fraction = float(cfg.get("train_fraction", 1.0))
     balance_flag = bool(cfg.get("balance_datasets", False))
     keep_best_n = int(cfg.get("keep_best_n", 3))
     checkpoint_metric = cfg.get("checkpoint_metric", "eval_accuracy")
@@ -459,9 +491,18 @@ def main():
     test_df = pd.concat(test_tables, ignore_index=True)
     if balance_flag:
         train_df = balance_datasets(train_df, seed=seed)
+    if train_fraction <= 0.0 or train_fraction > 1.0:
+        raise ValueError("train_fraction must be in (0.0, 1.0].")
+    if train_fraction < 1.0:
+        sampled = []
+        for ds in sorted(train_df["dataset"].unique()):
+            ds_df = train_df[train_df["dataset"] == ds]
+            n_keep = max(1, int(round(len(ds_df) * train_fraction)))
+            sampled.append(ds_df.sample(n=n_keep, random_state=seed))
+        train_df = pd.concat(sampled, ignore_index=True)
 
     validate_tables(train_df, val_df, test_df, raw2common_map, label_set)
-    _log_line(log_path, f"train_size={len(train_df)} val_size={len(val_df)} test_size={len(test_df)} balance_datasets={balance_flag}")
+    _log_line(log_path, f"train_size={len(train_df)} val_size={len(val_df)} test_size={len(test_df)} balance_datasets={balance_flag} train_fraction={train_fraction}")
     log_label_distributions(train_df, raw2common_map, label_set, "train", log_path)
     log_label_distributions(val_df, raw2common_map, label_set, "val", log_path)
     log_label_distributions(test_df, raw2common_map, label_set, "test", log_path)
@@ -522,10 +563,18 @@ def main():
     skip_save = bool(cfg.get("skip_save", False))
     skip_eval = bool(cfg.get("skip_eval", False))
     eval_steps = int(cfg.get("eval_steps", cfg.get("save_steps", 500)))
+    if skip_eval or str(eval_strategy).lower() == "no":
+        eval_strategy = "no"
+        skip_eval = True
+        load_best_cfg = False
+        if checkpoint_metric.startswith("eval_"):
+            checkpoint_metric = "train_loss"
+    if keep_best_n > 0 and save_strategy_cfg == "no":
+        raise ValueError("keep_best_n>0 requires save_strategy != 'no'.")
     if keep_best_n > 0:
-        if eval_strategy != save_strategy_cfg:
+        if checkpoint_metric not in ("train_loss", "loss") and eval_strategy != save_strategy_cfg:
             raise ValueError("When keep_best_n>0, evaluation_strategy and save_strategy must match.")
-        if eval_strategy == "steps" and save_steps != eval_steps:
+        if checkpoint_metric not in ("train_loss", "loss") and eval_strategy == "steps" and save_steps != eval_steps:
             raise ValueError("When keep_best_n>0, save_steps must equal eval_steps for aligned checkpoint metrics.")
 
     training_args = TrainingArguments(
@@ -547,7 +596,7 @@ def main():
         bf16=bf16_flag,
         warmup_ratio=0.1,
         weight_decay=0.01,
-        logging_steps=int(cfg.get("logging_steps", 50)),
+        logging_steps=int(cfg.get("logging_steps", 20)),
         report_to=[],
         seed=seed,
         max_grad_norm=0.5,
@@ -562,15 +611,18 @@ def main():
     callbacks = [FileLoggerCallback(log_path)]
     if freeze_steps > 0:
         callbacks.append(FeatureExtractorFreezeCallback(model, freeze_steps, log_path=log_path))
+    if not skip_save and save_strategy_cfg != "no":
+        callbacks.append(LossCheckpointCallback(str(out_dir), log_path=log_path))
     if keep_best_n > 0:
-        callbacks.append(BestCheckpointCallback(str(out_dir), checkpoint_metric, keep_best_n, maximize=True, log_path=log_path))
+        maximize = checkpoint_metric not in ("train_loss", "loss")
+        callbacks.append(BestCheckpointCallback(str(out_dir), checkpoint_metric, keep_best_n, maximize=maximize, log_path=log_path))
 
     trainer = Trainer(
         model=model,
         args=training_args,
         train_dataset=train_ds,
-        eval_dataset=val_ds,
-        compute_metrics=compute_metrics,
+        eval_dataset=None if skip_eval else val_ds,
+        compute_metrics=None if skip_eval else compute_metrics,
         callbacks=callbacks,
     )
 

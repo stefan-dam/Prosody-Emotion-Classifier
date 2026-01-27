@@ -46,6 +46,8 @@
      `python src/train_hubert_cls.py --datasets RAVDESS CREMAD --config configs/hubert_colab_safe.json`
    - Balanced compute/accuracy (smaller model, faster):
      `python src/train_hubert_cls.py --datasets RAVDESS CREMAD --config configs/hubert_base.json`
+   - Ultra-fast (uses 10% of training data, no eval, logs every 20 steps, checkpoints every 500 steps):
+     `python src/train_hubert_cls.py --datasets RAVDESS CREMAD --config configs/hubert_fast.json`
    - Quick smoke test (very fast sanity check):
      `python src/train_hubert_cls.py --datasets RAVDESS CREMAD --config configs/hubert_smoke.json`
 
@@ -53,6 +55,7 @@
    - Best checkpoints are kept automatically (top-3 by eval accuracy) in `models/RAVDESS+CREMAD_hubert_cls/`
    - Final test diagnostics are saved to `models/RAVDESS+CREMAD_hubert_cls/test_report.json`
    - Model is saved to `models/RAVDESS+CREMAD_hubert_cls/` (see `saved_model=...` in `train.log`)
+   - In ultra-fast mode, each checkpoint also writes `train_loss.json` in the checkpoint folder and logs `train_loss=...`
 
 8) Resume training from a checkpoint (if interrupted):
    - See what checkpoints exist:

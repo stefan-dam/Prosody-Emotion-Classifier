@@ -10,7 +10,7 @@
   "save_strategy": "steps",
   "save_steps": 500,
   "eval_steps": 500,
-  "logging_steps": 200,
+  "logging_steps": 20,
   "use_weighted_layer_sum": true,
   "classifier_proj_size": 256,
   "apply_spec_augment": true,
