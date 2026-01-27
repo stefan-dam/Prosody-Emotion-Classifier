@@ -6,7 +6,7 @@
   "gradient_accumulation_steps": 1,
   "learning_rate": 5e-4,
   "epochs": 1,
-  "max_steps": 1000,
+  "max_steps": 50000,
   "evaluation_strategy": "no",
   "save_strategy": "steps",
   "save_steps": 500,

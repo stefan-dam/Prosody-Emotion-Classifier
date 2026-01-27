@@ -609,13 +609,15 @@ def main():
     )
 
     callbacks = [FileLoggerCallback(log_path)]
+    best_cb = None
     if freeze_steps > 0:
         callbacks.append(FeatureExtractorFreezeCallback(model, freeze_steps, log_path=log_path))
     if not skip_save and save_strategy_cfg != "no":
         callbacks.append(LossCheckpointCallback(str(out_dir), log_path=log_path))
     if keep_best_n > 0:
         maximize = checkpoint_metric not in ("train_loss", "loss")
-        callbacks.append(BestCheckpointCallback(str(out_dir), checkpoint_metric, keep_best_n, maximize=maximize, log_path=log_path))
+        best_cb = BestCheckpointCallback(str(out_dir), checkpoint_metric, keep_best_n, maximize=maximize, log_path=log_path)
+        callbacks.append(best_cb)
 
     trainer = Trainer(
         model=model,
@@ -630,6 +632,7 @@ def main():
         trainer.train(resume_from_checkpoint=args.resume_from_checkpoint)
     else:
         trainer.train()
+    best_ckpt = best_cb.best[0][1] if best_cb and best_cb.best else None
     # Evaluate on test split after training with best model
     if not skip_eval:
         test_ds = AudioDS(test_df, extractor, sr, max_seconds, {**raw2common_map}, label2id)
@@ -644,6 +647,10 @@ def main():
     else:
         print("[INFO] Skipped evaluation (skip_eval=True)")
     if not skip_save:
+        if best_ckpt and checkpoint_metric in ("train_loss", "loss"):
+            print(f"[INFO] Loading best checkpoint by {checkpoint_metric}: {best_ckpt}")
+            _log_line(log_path, f"loading_best_checkpoint={best_ckpt} metric={checkpoint_metric}")
+            trainer.model = AutoModelForAudioClassification.from_pretrained(best_ckpt)
         trainer.save_model(str(out_dir))
         print(f"[DONE] Saved best model to {out_dir}")
         _log_line(log_path, f"saved_model={out_dir}")
