@@ -46,7 +46,7 @@
      `python src/train_hubert_cls.py --datasets RAVDESS CREMAD --config configs/hubert_colab_safe.json`
    - Balanced compute/accuracy (smaller model, faster):
      `python src/train_hubert_cls.py --datasets RAVDESS CREMAD --config configs/hubert_base.json`
-   - Ultra-fast (uses 10% of training data, no eval, logs every 20 steps, checkpoints every 500 steps):
+   - Ultra-fast (uses all data, no eval, fewer steps, higher LR, logs every 20 steps, checkpoints every 500 steps):
      `python src/train_hubert_cls.py --datasets RAVDESS CREMAD --config configs/hubert_fast.json`
    - Quick smoke test (very fast sanity check):
      `python src/train_hubert_cls.py --datasets RAVDESS CREMAD --config configs/hubert_smoke.json`
