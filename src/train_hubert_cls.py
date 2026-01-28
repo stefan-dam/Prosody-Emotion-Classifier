@@ -671,7 +671,10 @@ def main():
         try:
             import numpy as _np
             if hasattr(torch.serialization, "add_safe_globals"):
-                torch.serialization.add_safe_globals({_np.core.multiarray._reconstruct})
+                torch.serialization.add_safe_globals({
+                    _np.core.multiarray._reconstruct,
+                    _np.ndarray,
+                })
         except Exception:
             pass
         trainer.train(resume_from_checkpoint=args.resume_from_checkpoint)
