@@ -417,6 +417,7 @@ def main():
     ap.add_argument("--datasets", nargs="+", choices=["RAVDESS","CREMAD","IEMOCAP"], help="One or more datasets to train on")
     ap.add_argument("--dataset", choices=["RAVDESS","CREMAD","IEMOCAP"], help="Deprecated: single dataset (use --datasets instead)")
     ap.add_argument("--config", required=True)
+    ap.add_argument("--output_dir", help="Override output directory for checkpoints/models (optional)")
     ap.add_argument("--resume_from_checkpoint", help="Path to a Trainer checkpoint directory to resume from")
     args = ap.parse_args()
 
@@ -599,7 +600,8 @@ def main():
     val_ds = AudioDS(val_df, extractor, sr, max_seconds, {**raw2common_map}, label2id)
 
     dataset_tag = "+".join(dataset_names)
-    out_dir = Path(f"models/{dataset_tag}_hubert_cls")
+    cfg_output_dir = cfg.get("output_dir")
+    out_dir = Path(args.output_dir or cfg_output_dir or f"models/{dataset_tag}_hubert_cls")
     out_dir.mkdir(parents=True, exist_ok=True)
 
     eval_strategy = cfg.get("evaluation_strategy", cfg.get("eval_strategy", "steps"))

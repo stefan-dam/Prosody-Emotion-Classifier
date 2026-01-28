@@ -64,6 +64,12 @@
    - Pick the folder named like `checkpoint-1500` (higher number = later).
    - Run:
      `python src/train_hubert_cls.py --datasets RAVDESS CREMAD --config configs/hubert_colab_safe.json --resume_from_checkpoint models\\RAVDESS+CREMAD_hubert_cls\\checkpoint-1500`
+   - To resume from the *best* checkpoint, open `train.log` and pick the checkpoint line with the highest `eval_accuracy`, then use that path with `--resume_from_checkpoint`.
+   - (Optional) You can override the output folder with `--output_dir models\\RAVDESS+CREMAD_hubert_cls_run2`
+
+8a) Start all over without deleting old checkpoints (fresh output dir):
+   - Example (new folder):
+     `python src/train_hubert_cls.py --datasets RAVDESS CREMAD --config configs/hubert_fast.json --output_dir models\\RAVDESS+CREMAD_hubert_cls_fresh`
 
 9) Optional: train the prosody-only baseline (sanity check, not the max-accuracy model):
    - `python src/train_prosody_cls.py --datasets RAVDESS CREMAD --config configs/prosody_base.json`
