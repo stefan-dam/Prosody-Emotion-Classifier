@@ -667,6 +667,13 @@ def main():
     )
 
     if args.resume_from_checkpoint:
+        # Allow numpy reconstruct for checkpoint RNG state on PyTorch 2.6+ (trusted local checkpoints).
+        try:
+            import numpy as _np
+            if hasattr(torch.serialization, "add_safe_globals"):
+                torch.serialization.add_safe_globals({_np.core.multiarray._reconstruct})
+        except Exception:
+            pass
         trainer.train(resume_from_checkpoint=args.resume_from_checkpoint)
     else:
         trainer.train()
