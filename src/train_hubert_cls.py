@@ -667,6 +667,7 @@ def main():
     )
 
     if args.resume_from_checkpoint:
+        ignore_rng_state = bool(cfg.get("ignore_rng_state_on_resume", True))
         # Allow numpy types for checkpoint RNG state on PyTorch 2.6+ (trusted local checkpoints).
         try:
             import numpy as _np
@@ -677,13 +678,49 @@ def main():
             }
             if hasattr(torch.serialization, "safe_globals"):
                 with torch.serialization.safe_globals(_safe):
+                    if ignore_rng_state:
+                        orig_load_rng = trainer._load_rng_state
+                        def _safe_load_rng(resume_from_checkpoint):
+                            try:
+                                return orig_load_rng(resume_from_checkpoint)
+                            except Exception as e:
+                                print(f"[warn] Skipping RNG state load due to error: {e}")
+                                return None
+                        trainer._load_rng_state = _safe_load_rng
                     trainer.train(resume_from_checkpoint=args.resume_from_checkpoint)
             elif hasattr(torch.serialization, "add_safe_globals"):
                 torch.serialization.add_safe_globals(_safe)
+                if ignore_rng_state:
+                    orig_load_rng = trainer._load_rng_state
+                    def _safe_load_rng(resume_from_checkpoint):
+                        try:
+                            return orig_load_rng(resume_from_checkpoint)
+                        except Exception as e:
+                            print(f"[warn] Skipping RNG state load due to error: {e}")
+                            return None
+                    trainer._load_rng_state = _safe_load_rng
                 trainer.train(resume_from_checkpoint=args.resume_from_checkpoint)
             else:
+                if ignore_rng_state:
+                    orig_load_rng = trainer._load_rng_state
+                    def _safe_load_rng(resume_from_checkpoint):
+                        try:
+                            return orig_load_rng(resume_from_checkpoint)
+                        except Exception as e:
+                            print(f"[warn] Skipping RNG state load due to error: {e}")
+                            return None
+                    trainer._load_rng_state = _safe_load_rng
                 trainer.train(resume_from_checkpoint=args.resume_from_checkpoint)
         except Exception:
+            if ignore_rng_state:
+                orig_load_rng = trainer._load_rng_state
+                def _safe_load_rng(resume_from_checkpoint):
+                    try:
+                        return orig_load_rng(resume_from_checkpoint)
+                    except Exception as e:
+                        print(f"[warn] Skipping RNG state load due to error: {e}")
+                        return None
+                trainer._load_rng_state = _safe_load_rng
             trainer.train(resume_from_checkpoint=args.resume_from_checkpoint)
     else:
         trainer.train()
