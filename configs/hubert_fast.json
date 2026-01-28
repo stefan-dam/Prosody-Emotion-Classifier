@@ -30,6 +30,12 @@
   "dataloader_num_workers": 0,
   "cpu_threads": 4,
   "cpu_interop_threads": 2,
+  "cuda_memory_fraction": 0.6,
+  "cuda_max_split_size_mb": 128,
+  "auto_retry_on_oom": true,
+  "oom_max_retries": 2,
+  "oom_batch_reduction": 0.5,
+  "oom_min_batch_size": 1,
   "seed": 42,
   "log_path": "train.log",
   "label_set": ["neutral","happy","angry","sad","disgust","fear","excited"]
