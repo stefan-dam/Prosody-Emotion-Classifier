@@ -1,76 +1,25 @@
-1) Create and activate a Python environment, then install dependencies (Windows):
-   - Create venv:
-     - `python -m venv venv`
-   - Activate venv:
-     - PowerShell: `.\venv\Scripts\Activate.ps1`
-     - Command Prompt: `venv\Scripts\activate.bat`
-   - If PowerShell blocks activation, run once:
-     - `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`
-   - Install deps:
-     - `python -m pip install -r requirements.txt`
+1) Create and activate a Python environment, then install dependencies:
+   - `python -m venv venv`
+   - PowerShell: `\.\venv\Scripts\Activate.ps1`
+     Command Prompt: `venv\Scripts\activate.bat`
+   - `python -m pip install -r requirements.txt`
 
-2) GPU vs CPU setup (Windows-specific):
-   - CPU-only: nothing extra is required (the torch/torchaudio wheels from requirements are CPU builds).
-   - NVIDIA GPU (CUDA):
-     - Install the CUDA-enabled PyTorch wheels after step 1 so they overwrite CPU wheels.
-     - Use the official PyTorch install command for your CUDA version from the PyTorch website.
-   - Verify GPU is visible:
-     - `python -c "import torch; print(torch.cuda.is_available()); print(torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU only')"`
-   - Optional: select GPU 0 explicitly
-     - PowerShell: `$env:CUDA_VISIBLE_DEVICES="0"`
-     - Command Prompt: `set CUDA_VISIBLE_DEVICES=0`
-   - Friendly-mode limits (keeps PC responsive while training):
-     - Cap CPU threads:
-       - PowerShell: `$env:OMP_NUM_THREADS="4"; $env:MKL_NUM_THREADS="4"`
-       - Command Prompt: `set OMP_NUM_THREADS=4` and `set MKL_NUM_THREADS=4`
-     - Reduce CUDA memory fragmentation:
-       - PowerShell: `$env:PYTORCH_CUDA_ALLOC_CONF="max_split_size_mb:128,expandable_segments:True"`
-       - Command Prompt: `set PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:128,expandable_segments:True`
+2) Install CUDA-enabled PyTorch for your CUDA version (so GPU is used), then verify:
+   - `python -c "import torch; print(torch.cuda.is_available()); print(torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU only')"`
 
-3) Download datasets and place them under `data/` with this structure:
+3) Put datasets under `data/`:
    - RAVDESS: `data/RAVDESS/Actor_01/*.wav`, `data/RAVDESS/Actor_02/*.wav`, ...
    - CREMAD: `data/CREMAD/*.wav`
 
-4) Generate metadata CSVs (creates `metadata.csv` for each dataset):
+4) Build metadata + splits:
    - `python src/make_metadata_ravdess.py`
    - `python src/make_metadata_cremad.py`
-
-5) Generate speaker-disjoint splits (reproducible; no speaker leakage):
    - `python src/make_splits.py RAVDESS --seed 42`
    - `python src/make_splits.py CREMAD --seed 42`
 
-6) Train the combined HuBERT model (logs to `train.log` in repo root):
-   - Max accuracy (strong GPU):
-     `python src/train_hubert_cls.py --datasets RAVDESS CREMAD --config configs/hubert_colab.json`
-   - Friendly mode (same HuBERT model, lighter on VRAM/CPU; best for shared PCs):
-     `python src/train_hubert_cls.py --datasets RAVDESS CREMAD --config configs/hubert_colab_safe.json`
-   - Balanced compute/accuracy (smaller model, faster):
-     `python src/train_hubert_cls.py --datasets RAVDESS CREMAD --config configs/hubert_base.json`
-   - Ultra-fast (uses all data, no eval, fewer steps, higher LR, logs every 20 steps, checkpoints every 500 steps):
-     `python src/train_hubert_cls.py --datasets RAVDESS CREMAD --config configs/hubert_fast.json`
-   - Quick smoke test (very fast sanity check):
-     `python src/train_hubert_cls.py --datasets RAVDESS CREMAD --config configs/hubert_smoke.json`
+5) Train the new large HuBERT model (separate output folder):
+   - `python src/train_hubert_cls.py --datasets RAVDESS CREMAD --config configs/hubert_large_4070.json`
+   - Outputs go to `models/RAVDESS+CREMAD_hubert_cls_large_4070_2026-01-28/` and will not touch old checkpoints.
 
-7) After training completes:
-   - Best checkpoints are kept automatically (top-3 by eval accuracy) in `models/RAVDESS+CREMAD_hubert_cls/`
-   - Final test diagnostics are saved to `models/RAVDESS+CREMAD_hubert_cls/test_report.json`
-   - Model is saved to `models/RAVDESS+CREMAD_hubert_cls/` (see `saved_model=...` in `train.log`)
-   - In ultra-fast mode, each checkpoint also writes `train_loss.json` in the checkpoint folder and logs `train_loss=...`
-
-8) Resume training from a checkpoint (if interrupted):
-   - See what checkpoints exist:
-     - PowerShell: `dir .\models\RAVDESS+CREMAD_hubert_cls`
-     - Command Prompt: `dir models\RAVDESS+CREMAD_hubert_cls`
-   - Pick the folder named like `checkpoint-1500` (higher number = later).
-   - Run:
-     `python src/train_hubert_cls.py --datasets RAVDESS CREMAD --config configs/hubert_colab_safe.json --resume_from_checkpoint models\\RAVDESS+CREMAD_hubert_cls\\checkpoint-1500`
-
-9) Optional: train the prosody-only baseline (sanity check, not the max-accuracy model):
-   - `python src/train_prosody_cls.py --datasets RAVDESS CREMAD --config configs/prosody_base.json`
-
-Notes:
-   - `configs/hubert_colab.json` includes accuracy-focused settings:
-     - Weighted layer sum for HuBERT, SpecAugment, mild waveform augmentation, random cropping,
-       and a short feature-extractor freeze for stabilization.
-   - If you need to reduce memory (especially on CPU), lower `batch_size` or increase
-     `gradient_accumulation_steps` in the chosen config file.
+6) Resume if needed:
+   - `python src/train_hubert_cls.py --datasets RAVDESS CREMAD --config configs/hubert_large_4070.json --resume_from_checkpoint models\RAVDESS+CREMAD_hubert_cls_large_4070_2026-01-28\checkpoint-XXXX`

@@ -554,7 +554,13 @@ def main():
     val_ds = AudioDS(val_df, extractor, sr, max_seconds, {**raw2common_map}, label2id)
 
     dataset_tag = "+".join(dataset_names)
-    out_dir = Path(f"models/{dataset_tag}_hubert_cls")
+    run_name = cfg.get("run_name")
+    out_dir_cfg = cfg.get("output_dir")
+    if out_dir_cfg:
+        out_dir = Path(out_dir_cfg)
+    else:
+        base_out_dir = Path(f"models/{dataset_tag}_hubert_cls")
+        out_dir = Path(f"{base_out_dir}_{run_name}") if run_name else base_out_dir
     out_dir.mkdir(parents=True, exist_ok=True)
 
     eval_strategy = cfg.get("evaluation_strategy", cfg.get("eval_strategy", "steps"))

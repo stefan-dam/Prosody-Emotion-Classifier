@@ -1,5 +1,5 @@
 {
-  "model_name": "superb/hubert-base-superb-er",
+  "model_name": "superb/hubert-large-superb-er",
   "sample_rate": 16000,
   "max_seconds": 5,
   "batch_size": 16,
