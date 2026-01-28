@@ -391,6 +391,21 @@ def _json_safe_metrics(metrics):
             safe[k] = v
     return safe
 
+def _maybe_sample_df(df, max_samples, seed):
+    if max_samples is None:
+        return df
+    n = int(max_samples)
+    if n > 0 and len(df) > n:
+        return df.sample(n=n, random_state=seed).reset_index(drop=True)
+    return df
+
+def _log_eval_metrics(log_path, metrics, prefix):
+    safe = _json_safe_metrics(metrics)
+    _log_line(log_path, f"{prefix}_metrics={json.dumps(safe, sort_keys=True)}")
+    acc_key = f"{prefix}_accuracy"
+    if acc_key in safe:
+        _log_line(log_path, f"{acc_key}={safe[acc_key]:.6f}")
+
 
 def main():
     ap = argparse.ArgumentParser()
@@ -411,6 +426,12 @@ def main():
     max_steps = int(cfg.get("max_steps", -1))  # -1 means use epochs
     eval_batch_size = int(cfg.get("eval_batch_size", cfg.get("batch_size", 2)))
     eval_accumulation_steps = int(cfg.get("eval_accumulation_steps", 1))
+    post_eval = bool(cfg.get("post_train_eval", False))
+    post_eval_split = str(cfg.get("post_train_eval_split", "val")).lower()
+    post_eval_max_samples = int(cfg.get("post_train_eval_max_samples", 0))
+    post_eval_batch_size = int(cfg.get("post_train_eval_batch_size", eval_batch_size))
+    post_eval_accumulation_steps = int(cfg.get("post_train_eval_accumulation_steps", eval_accumulation_steps))
+    post_eval_max_seconds = int(cfg.get("post_train_eval_max_seconds", max_seconds))
     grad_accum_steps = int(cfg.get("gradient_accumulation_steps", 1))
     seed = int(cfg.get("seed", 42))
     log_path = cfg.get("log_path", "train.log")
@@ -427,6 +448,17 @@ def main():
     grad_ckpt = bool(cfg.get("gradient_checkpointing", False))
     save_steps = int(cfg.get("save_steps", 500))
     dataset_to_common, _ = load_label_maps()
+
+    if post_eval_split not in ("val", "test"):
+        raise ValueError("post_train_eval_split must be 'val' or 'test'.")
+    if post_eval_max_samples < 0:
+        raise ValueError("post_train_eval_max_samples must be >= 0.")
+    if post_eval_batch_size < 1:
+        raise ValueError("post_train_eval_batch_size must be >= 1.")
+    if post_eval_accumulation_steps < 1:
+        raise ValueError("post_train_eval_accumulation_steps must be >= 1.")
+    if post_eval_max_seconds < 1:
+        raise ValueError("post_train_eval_max_seconds must be >= 1.")
 
     if fp16_flag and not torch.cuda.is_available():
         print("[warn] fp16 requested but CUDA is not available; disabling fp16.")
@@ -630,7 +662,7 @@ def main():
         args=training_args,
         train_dataset=train_ds,
         eval_dataset=None if skip_eval else val_ds,
-        compute_metrics=None if skip_eval else compute_metrics,
+        compute_metrics=compute_metrics if (not skip_eval or post_eval) else None,
         callbacks=callbacks,
     )
 
@@ -639,19 +671,6 @@ def main():
     else:
         trainer.train()
     best_ckpt = best_cb.best[0][1] if best_cb and best_cb.best else None
-    # Evaluate on test split after training with best model
-    if not skip_eval:
-        test_ds = AudioDS(test_df, extractor, sr, max_seconds, {**raw2common_map}, label2id)
-        test_metrics = trainer.evaluate(test_ds, metric_key_prefix="test")
-        print(f"[TEST] {test_metrics}")
-        _log_line(log_path, f"test_metrics={json.dumps(_json_safe_metrics(test_metrics), sort_keys=True)}")
-        preds = trainer.predict(test_ds)
-        pred_logits = preds.predictions[0] if isinstance(preds.predictions, (tuple, list)) else preds.predictions
-        y_pred = pred_logits.argmax(-1)
-        y_true = build_common_labels(test_df, raw2common_map, label2id)
-        write_test_report(out_dir, test_df, y_true, y_pred, id2label)
-    else:
-        print("[INFO] Skipped evaluation (skip_eval=True)")
     if not skip_save:
         if best_ckpt and checkpoint_metric in ("train_loss", "loss"):
             print(f"[INFO] Loading best checkpoint by {checkpoint_metric}: {best_ckpt}")
@@ -662,6 +681,39 @@ def main():
         _log_line(log_path, f"saved_model={out_dir}")
     else:
         print("[INFO] Skipped saving model (skip_save=True)")
+
+    did_eval = False
+    # Evaluate after saving to avoid losing checkpoints if eval crashes
+    if not skip_eval:
+        test_ds = AudioDS(test_df, extractor, sr, max_seconds, {**raw2common_map}, label2id)
+        test_metrics = trainer.evaluate(test_ds, metric_key_prefix="test")
+        print(f"[TEST] {test_metrics}")
+        _log_eval_metrics(log_path, test_metrics, "test")
+        preds = trainer.predict(test_ds)
+        pred_logits = preds.predictions[0] if isinstance(preds.predictions, (tuple, list)) else preds.predictions
+        y_pred = pred_logits.argmax(-1)
+        y_true = build_common_labels(test_df, raw2common_map, label2id)
+        write_test_report(out_dir, test_df, y_true, y_pred, id2label)
+        did_eval = True
+    elif post_eval:
+        eval_df = val_df if post_eval_split == "val" else test_df
+        eval_df = _maybe_sample_df(eval_df, post_eval_max_samples, seed)
+        eval_ds = AudioDS(eval_df, extractor, sr, post_eval_max_seconds, {**raw2common_map}, label2id)
+        orig_bs = trainer.args.per_device_eval_batch_size
+        orig_accum = trainer.args.eval_accumulation_steps
+        trainer.args.per_device_eval_batch_size = int(post_eval_batch_size)
+        trainer.args.eval_accumulation_steps = int(post_eval_accumulation_steps)
+        try:
+            prefix = f"post_{post_eval_split}"
+            post_metrics = trainer.evaluate(eval_ds, metric_key_prefix=prefix)
+            print(f"[POST_EVAL:{post_eval_split.upper()}] {post_metrics}")
+            _log_eval_metrics(log_path, post_metrics, prefix)
+            did_eval = True
+        finally:
+            trainer.args.per_device_eval_batch_size = orig_bs
+            trainer.args.eval_accumulation_steps = orig_accum
+    if not did_eval:
+        print("[INFO] Skipped evaluation (skip_eval=True)")
 
 if __name__ == "__main__":
     main()
