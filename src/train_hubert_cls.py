@@ -681,40 +681,47 @@ def main():
 
     best_cb = None
     resume_ckpt = args.resume_from_checkpoint
-    attempt = 0
-    while True:
+    if not auto_retry_on_oom:
         trainer, best_cb = build_trainer(train_batch_size, eval_batch_size, grad_accum_steps)
-        try:
-            if resume_ckpt:
-                trainer.train(resume_from_checkpoint=resume_ckpt)
-            else:
-                trainer.train()
-            break
-        except (RuntimeError, MemoryError) as e:
-            if not _is_oom_error(e):
-                raise
-            if not auto_retry_on_oom or attempt >= oom_max_retries:
-                _log_line(log_path, f"oom_abort error={str(e).splitlines()[0]}")
-                print("[ERROR] Out of memory. Aborting training after retries.")
-                return
-            attempt += 1
-            _log_line(
-                log_path,
-                f"oom_retry={attempt} error={str(e).splitlines()[0]} "
-                f"train_bs={train_batch_size} eval_bs={eval_batch_size} grad_accum={grad_accum_steps}",
-            )
-            train_batch_size = max(oom_min_batch_size, int(train_batch_size * oom_batch_reduction))
-            eval_batch_size = max(1, int(eval_batch_size * oom_batch_reduction))
-            grad_accum_steps = max(1, int(grad_accum_steps * oom_batch_reduction))
-            resume_ckpt = _find_latest_checkpoint(str(out_dir))
-            if resume_ckpt:
-                _log_line(log_path, f"oom_resume_checkpoint={resume_ckpt}")
-            else:
-                _log_line(log_path, "oom_resume_checkpoint=none")
+        if resume_ckpt:
+            trainer.train(resume_from_checkpoint=resume_ckpt)
+        else:
+            trainer.train()
+    else:
+        attempt = 0
+        while True:
+            trainer, best_cb = build_trainer(train_batch_size, eval_batch_size, grad_accum_steps)
+            try:
+                if resume_ckpt:
+                    trainer.train(resume_from_checkpoint=resume_ckpt)
+                else:
+                    trainer.train()
+                break
+            except (RuntimeError, MemoryError) as e:
+                if not _is_oom_error(e):
+                    raise
+                if attempt >= oom_max_retries:
+                    _log_line(log_path, f"oom_abort error={str(e).splitlines()[0]}")
+                    print("[ERROR] Out of memory. Aborting training after retries.")
+                    return
+                attempt += 1
+                _log_line(
+                    log_path,
+                    f"oom_retry={attempt} error={str(e).splitlines()[0]} "
+                    f"train_bs={train_batch_size} eval_bs={eval_batch_size} grad_accum={grad_accum_steps}",
+                )
+                train_batch_size = max(oom_min_batch_size, int(train_batch_size * oom_batch_reduction))
+                eval_batch_size = max(1, int(eval_batch_size * oom_batch_reduction))
+                grad_accum_steps = max(1, int(grad_accum_steps * oom_batch_reduction))
+                resume_ckpt = _find_latest_checkpoint(str(out_dir))
+                if resume_ckpt:
+                    _log_line(log_path, f"oom_resume_checkpoint={resume_ckpt}")
+                else:
+                    _log_line(log_path, "oom_resume_checkpoint=none")
     best_ckpt = best_cb.best[0][1] if best_cb and best_cb.best else None
     # Evaluate on test split after training with best model
     if not skip_eval:
-        try:
+        if not auto_retry_on_oom:
             test_ds = AudioDS(test_df, extractor, sr, max_seconds, {**raw2common_map}, label2id)
             test_metrics = trainer.evaluate(test_ds, metric_key_prefix="test")
             print(f"[TEST] {test_metrics}")
@@ -724,12 +731,23 @@ def main():
             y_pred = pred_logits.argmax(-1)
             y_true = build_common_labels(test_df, raw2common_map, label2id)
             write_test_report(out_dir, test_df, y_true, y_pred, id2label)
-        except (RuntimeError, MemoryError) as e:
-            if _is_oom_error(e):
-                _log_line(log_path, f"oom_abort_eval error={str(e).splitlines()[0]}")
-                print("[ERROR] Out of memory during evaluation. Skipping test eval.")
-            else:
-                raise
+        else:
+            try:
+                test_ds = AudioDS(test_df, extractor, sr, max_seconds, {**raw2common_map}, label2id)
+                test_metrics = trainer.evaluate(test_ds, metric_key_prefix="test")
+                print(f"[TEST] {test_metrics}")
+                _log_line(log_path, f"test_metrics={json.dumps(_json_safe_metrics(test_metrics), sort_keys=True)}")
+                preds = trainer.predict(test_ds)
+                pred_logits = preds.predictions[0] if isinstance(preds.predictions, (tuple, list)) else preds.predictions
+                y_pred = pred_logits.argmax(-1)
+                y_true = build_common_labels(test_df, raw2common_map, label2id)
+                write_test_report(out_dir, test_df, y_true, y_pred, id2label)
+            except (RuntimeError, MemoryError) as e:
+                if _is_oom_error(e):
+                    _log_line(log_path, f"oom_abort_eval error={str(e).splitlines()[0]}")
+                    print("[ERROR] Out of memory during evaluation. Skipping test eval.")
+                else:
+                    raise
     else:
         print("[INFO] Skipped evaluation (skip_eval=True)")
     if not skip_save:
