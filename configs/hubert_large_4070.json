@@ -8,7 +8,7 @@
   "eval_accumulation_steps": 1,
   "fp16": false,
   "gradient_checkpointing": true,
-  "learning_rate": 3e-5,
+  "learning_rate": 1e-4,
   "logging_steps": 20,
   "epochs": 60,
   "max_steps": 10000,
