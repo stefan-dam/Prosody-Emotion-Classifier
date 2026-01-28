@@ -667,17 +667,24 @@ def main():
     )
 
     if args.resume_from_checkpoint:
-        # Allow numpy reconstruct for checkpoint RNG state on PyTorch 2.6+ (trusted local checkpoints).
+        # Allow numpy types for checkpoint RNG state on PyTorch 2.6+ (trusted local checkpoints).
         try:
             import numpy as _np
-            if hasattr(torch.serialization, "add_safe_globals"):
-                torch.serialization.add_safe_globals({
-                    _np.core.multiarray._reconstruct,
-                    _np.ndarray,
-                })
+            _safe = {
+                _np.core.multiarray._reconstruct,
+                _np.ndarray,
+                _np.dtype,
+            }
+            if hasattr(torch.serialization, "safe_globals"):
+                with torch.serialization.safe_globals(_safe):
+                    trainer.train(resume_from_checkpoint=args.resume_from_checkpoint)
+            elif hasattr(torch.serialization, "add_safe_globals"):
+                torch.serialization.add_safe_globals(_safe)
+                trainer.train(resume_from_checkpoint=args.resume_from_checkpoint)
+            else:
+                trainer.train(resume_from_checkpoint=args.resume_from_checkpoint)
         except Exception:
-            pass
-        trainer.train(resume_from_checkpoint=args.resume_from_checkpoint)
+            trainer.train(resume_from_checkpoint=args.resume_from_checkpoint)
     else:
         trainer.train()
     best_ckpt = best_cb.best[0][1] if best_cb and best_cb.best else None
