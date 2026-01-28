@@ -415,6 +415,9 @@ def main():
     seed = int(cfg.get("seed", 42))
     log_path = cfg.get("log_path", "train.log")
     train_fraction = float(cfg.get("train_fraction", 1.0))
+    cpu_threads = cfg.get("cpu_threads")
+    cpu_interop_threads = cfg.get("cpu_interop_threads")
+    dataloader_num_workers = int(cfg.get("dataloader_num_workers", 0))
     balance_flag = bool(cfg.get("balance_datasets", False))
     keep_best_n = int(cfg.get("keep_best_n", 3))
     checkpoint_metric = cfg.get("checkpoint_metric", "eval_accuracy")
@@ -453,6 +456,10 @@ def main():
     num_labels = len(label_set)
 
     set_seed(seed)
+    if cpu_threads is not None:
+        torch.set_num_threads(int(cpu_threads))
+    if cpu_interop_threads is not None:
+        torch.set_num_interop_threads(int(cpu_interop_threads))
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
@@ -606,6 +613,7 @@ def main():
         save_steps=save_steps,
         eval_accumulation_steps=eval_accumulation_steps,
         gradient_checkpointing=grad_ckpt,
+        dataloader_num_workers=dataloader_num_workers,
     )
 
     callbacks = [FileLoggerCallback(log_path)]
