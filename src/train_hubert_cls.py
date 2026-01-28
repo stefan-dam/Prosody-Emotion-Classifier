@@ -11,26 +11,6 @@ from sklearn.metrics import f1_score, accuracy_score, recall_score, confusion_ma
 from transformers import AutoConfig, AutoFeatureExtractor, AutoModelForAudioClassification, Trainer, TrainingArguments, set_seed, TrainerCallback
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR
 
-def _is_oom_error(err):
-    msg = str(err).lower()
-    return any(k in msg for k in ["out of memory", "cuda out of memory", "cudnn", "alloc", "malloc"])
-
-def _find_latest_checkpoint(output_dir):
-    if not output_dir or not os.path.isdir(output_dir):
-        return None
-    best = None
-    for name in os.listdir(output_dir):
-        if not name.startswith(PREFIX_CHECKPOINT_DIR + "-"):
-            continue
-        try:
-            step = int(name.split("-")[-1])
-        except ValueError:
-            continue
-        path = os.path.join(output_dir, name)
-        if os.path.isdir(path) and (best is None or step > best[0]):
-            best = (step, path)
-    return best[1] if best else None
-
 def _apply_gain(x, rng, gain_db_range):
     if gain_db_range <= 0.0:
         return x
@@ -417,7 +397,6 @@ def main():
     ap.add_argument("--datasets", nargs="+", choices=["RAVDESS","CREMAD","IEMOCAP"], help="One or more datasets to train on")
     ap.add_argument("--dataset", choices=["RAVDESS","CREMAD","IEMOCAP"], help="Deprecated: single dataset (use --datasets instead)")
     ap.add_argument("--config", required=True)
-    ap.add_argument("--output_dir", help="Override output directory for checkpoints/models (optional)")
     ap.add_argument("--resume_from_checkpoint", help="Path to a Trainer checkpoint directory to resume from")
     args = ap.parse_args()
 
@@ -427,25 +406,15 @@ def main():
     dataset_names = dataset_arg
 
     cfg = json.load(open(args.config))
-    cuda_visible_devices = cfg.get("cuda_visible_devices")
-    cuda_max_split_size_mb = cfg.get("cuda_max_split_size_mb")
-    if cuda_visible_devices is not None:
-        os.environ["CUDA_VISIBLE_DEVICES"] = str(cuda_visible_devices)
-    if cuda_max_split_size_mb is not None and "PYTORCH_CUDA_ALLOC_CONF" not in os.environ:
-        os.environ["PYTORCH_CUDA_ALLOC_CONF"] = f"max_split_size_mb:{int(cuda_max_split_size_mb)},expandable_segments:True"
     sr = int(cfg["sample_rate"])
     max_seconds = int(cfg.get("max_seconds", 3))
     max_steps = int(cfg.get("max_steps", -1))  # -1 means use epochs
-    train_batch_size = int(cfg.get("batch_size", 2))
-    eval_batch_size = int(cfg.get("eval_batch_size", train_batch_size))
+    eval_batch_size = int(cfg.get("eval_batch_size", cfg.get("batch_size", 2)))
     eval_accumulation_steps = int(cfg.get("eval_accumulation_steps", 1))
     grad_accum_steps = int(cfg.get("gradient_accumulation_steps", 1))
     seed = int(cfg.get("seed", 42))
     log_path = cfg.get("log_path", "train.log")
     train_fraction = float(cfg.get("train_fraction", 1.0))
-    cpu_threads = cfg.get("cpu_threads")
-    cpu_interop_threads = cfg.get("cpu_interop_threads")
-    dataloader_num_workers = int(cfg.get("dataloader_num_workers", 0))
     balance_flag = bool(cfg.get("balance_datasets", False))
     keep_best_n = int(cfg.get("keep_best_n", 3))
     checkpoint_metric = cfg.get("checkpoint_metric", "eval_accuracy")
@@ -455,17 +424,11 @@ def main():
     freeze_steps = int(cfg.get("freeze_feature_extractor_steps", 0))
     fp16_flag = bool(cfg.get("fp16", False))
     bf16_flag = bool(cfg.get("bf16", False))
-    no_cuda_flag = bool(cfg.get("no_cuda", False))
-    cuda_memory_fraction = cfg.get("cuda_memory_fraction")
     grad_ckpt = bool(cfg.get("gradient_checkpointing", False))
     save_steps = int(cfg.get("save_steps", 500))
-    auto_retry_on_oom = bool(cfg.get("auto_retry_on_oom", False))
-    oom_max_retries = int(cfg.get("oom_max_retries", 1))
-    oom_batch_reduction = float(cfg.get("oom_batch_reduction", 0.5))
-    oom_min_batch_size = int(cfg.get("oom_min_batch_size", 1))
     dataset_to_common, _ = load_label_maps()
 
-    if fp16_flag and (not torch.cuda.is_available() or no_cuda_flag):
+    if fp16_flag and not torch.cuda.is_available():
         print("[warn] fp16 requested but CUDA is not available; disabling fp16.")
         fp16_flag = False
 
@@ -490,15 +453,6 @@ def main():
     num_labels = len(label_set)
 
     set_seed(seed)
-    if cpu_threads is not None:
-        torch.set_num_threads(int(cpu_threads))
-    if cpu_interop_threads is not None:
-        torch.set_num_interop_threads(int(cpu_interop_threads))
-    if torch.cuda.is_available() and not no_cuda_flag and cuda_memory_fraction is not None:
-        frac = float(cuda_memory_fraction)
-        if frac <= 0.0 or frac > 1.0:
-            raise ValueError("cuda_memory_fraction must be in (0.0, 1.0].")
-        torch.cuda.set_per_process_memory_fraction(frac, device=0)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
@@ -600,8 +554,7 @@ def main():
     val_ds = AudioDS(val_df, extractor, sr, max_seconds, {**raw2common_map}, label2id)
 
     dataset_tag = "+".join(dataset_names)
-    cfg_output_dir = cfg.get("output_dir")
-    out_dir = Path(args.output_dir or cfg_output_dir or f"models/{dataset_tag}_hubert_cls")
+    out_dir = Path(f"models/{dataset_tag}_hubert_cls")
     out_dir.mkdir(parents=True, exist_ok=True)
 
     eval_strategy = cfg.get("evaluation_strategy", cfg.get("eval_strategy", "steps"))
@@ -624,130 +577,73 @@ def main():
         if checkpoint_metric not in ("train_loss", "loss") and eval_strategy == "steps" and save_steps != eval_steps:
             raise ValueError("When keep_best_n>0, save_steps must equal eval_steps for aligned checkpoint metrics.")
 
-    def build_trainer(train_bs, eval_bs, grad_accum):
-        training_args = TrainingArguments(
-            output_dir=str(out_dir),
-            per_device_train_batch_size=int(train_bs),
-            per_device_eval_batch_size=int(eval_bs),
-            learning_rate=float(cfg.get("learning_rate", 1e-5)),
-            num_train_epochs=int(cfg.get("epochs", 3)),
-            max_steps=max_steps,
-            gradient_accumulation_steps=int(grad_accum),
-            evaluation_strategy=eval_strategy,
-            eval_steps=eval_steps if eval_strategy == "steps" else None,
-            save_strategy=save_strategy_cfg,
-            load_best_model_at_end=load_best_cfg and save_strategy_cfg != "no",
-            metric_for_best_model=checkpoint_metric.replace("eval_", ""),
-            greater_is_better=True,
-            remove_unused_columns=False,
-            fp16=fp16_flag,
-            bf16=bf16_flag,
-            warmup_ratio=0.1,
-            weight_decay=0.01,
-            logging_steps=int(cfg.get("logging_steps", 20)),
-            report_to=[],
-            seed=seed,
-            max_grad_norm=0.5,
-            optim="adamw_torch",
-            logging_nan_inf_filter=False,
-            save_total_limit=None,
-            save_steps=save_steps,
-            eval_accumulation_steps=eval_accumulation_steps,
-            gradient_checkpointing=grad_ckpt,
-            dataloader_num_workers=dataloader_num_workers,
-            no_cuda=no_cuda_flag,
-        )
+    training_args = TrainingArguments(
+        output_dir=str(out_dir),
+        per_device_train_batch_size=int(cfg.get("batch_size", 2)),
+        per_device_eval_batch_size=eval_batch_size,
+        learning_rate=float(cfg.get("learning_rate", 1e-5)),
+        num_train_epochs=int(cfg.get("epochs", 3)),
+        max_steps=max_steps,
+        gradient_accumulation_steps=grad_accum_steps,
+        evaluation_strategy=eval_strategy,
+        eval_steps=eval_steps if eval_strategy == "steps" else None,
+        save_strategy=save_strategy_cfg,
+        load_best_model_at_end=load_best_cfg and save_strategy_cfg != "no",
+        metric_for_best_model=checkpoint_metric.replace("eval_", ""),
+        greater_is_better=True,
+        remove_unused_columns=False,
+        fp16=fp16_flag,
+        bf16=bf16_flag,
+        warmup_ratio=0.1,
+        weight_decay=0.01,
+        logging_steps=int(cfg.get("logging_steps", 20)),
+        report_to=[],
+        seed=seed,
+        max_grad_norm=0.5,
+        optim="adamw_torch",
+        logging_nan_inf_filter=False,
+        save_total_limit=None,
+        save_steps=save_steps,
+        eval_accumulation_steps=eval_accumulation_steps,
+        gradient_checkpointing=grad_ckpt,
+    )
 
-        callbacks = [FileLoggerCallback(log_path)]
-        best_cb = None
-        if freeze_steps > 0:
-            callbacks.append(FeatureExtractorFreezeCallback(model, freeze_steps, log_path=log_path))
-        if not skip_save and save_strategy_cfg != "no":
-            callbacks.append(LossCheckpointCallback(str(out_dir), log_path=log_path))
-        if keep_best_n > 0:
-            maximize = checkpoint_metric not in ("train_loss", "loss")
-            best_cb = BestCheckpointCallback(str(out_dir), checkpoint_metric, keep_best_n, maximize=maximize, log_path=log_path)
-            callbacks.append(best_cb)
-
-        trainer = Trainer(
-            model=model,
-            args=training_args,
-            train_dataset=train_ds,
-            eval_dataset=None if skip_eval else val_ds,
-            compute_metrics=None if skip_eval else compute_metrics,
-            callbacks=callbacks,
-        )
-        return trainer, best_cb
-
+    callbacks = [FileLoggerCallback(log_path)]
     best_cb = None
-    resume_ckpt = args.resume_from_checkpoint
-    if not auto_retry_on_oom:
-        trainer, best_cb = build_trainer(train_batch_size, eval_batch_size, grad_accum_steps)
-        if resume_ckpt:
-            trainer.train(resume_from_checkpoint=resume_ckpt)
-        else:
-            trainer.train()
+    if freeze_steps > 0:
+        callbacks.append(FeatureExtractorFreezeCallback(model, freeze_steps, log_path=log_path))
+    if not skip_save and save_strategy_cfg != "no":
+        callbacks.append(LossCheckpointCallback(str(out_dir), log_path=log_path))
+    if keep_best_n > 0:
+        maximize = checkpoint_metric not in ("train_loss", "loss")
+        best_cb = BestCheckpointCallback(str(out_dir), checkpoint_metric, keep_best_n, maximize=maximize, log_path=log_path)
+        callbacks.append(best_cb)
+
+    trainer = Trainer(
+        model=model,
+        args=training_args,
+        train_dataset=train_ds,
+        eval_dataset=None if skip_eval else val_ds,
+        compute_metrics=None if skip_eval else compute_metrics,
+        callbacks=callbacks,
+    )
+
+    if args.resume_from_checkpoint:
+        trainer.train(resume_from_checkpoint=args.resume_from_checkpoint)
     else:
-        attempt = 0
-        while True:
-            trainer, best_cb = build_trainer(train_batch_size, eval_batch_size, grad_accum_steps)
-            try:
-                if resume_ckpt:
-                    trainer.train(resume_from_checkpoint=resume_ckpt)
-                else:
-                    trainer.train()
-                break
-            except (RuntimeError, MemoryError) as e:
-                if not _is_oom_error(e):
-                    raise
-                if attempt >= oom_max_retries:
-                    _log_line(log_path, f"oom_abort error={str(e).splitlines()[0]}")
-                    print("[ERROR] Out of memory. Aborting training after retries.")
-                    return
-                attempt += 1
-                _log_line(
-                    log_path,
-                    f"oom_retry={attempt} error={str(e).splitlines()[0]} "
-                    f"train_bs={train_batch_size} eval_bs={eval_batch_size} grad_accum={grad_accum_steps}",
-                )
-                train_batch_size = max(oom_min_batch_size, int(train_batch_size * oom_batch_reduction))
-                eval_batch_size = max(1, int(eval_batch_size * oom_batch_reduction))
-                grad_accum_steps = max(1, int(grad_accum_steps * oom_batch_reduction))
-                resume_ckpt = _find_latest_checkpoint(str(out_dir))
-                if resume_ckpt:
-                    _log_line(log_path, f"oom_resume_checkpoint={resume_ckpt}")
-                else:
-                    _log_line(log_path, "oom_resume_checkpoint=none")
+        trainer.train()
     best_ckpt = best_cb.best[0][1] if best_cb and best_cb.best else None
     # Evaluate on test split after training with best model
     if not skip_eval:
-        if not auto_retry_on_oom:
-            test_ds = AudioDS(test_df, extractor, sr, max_seconds, {**raw2common_map}, label2id)
-            test_metrics = trainer.evaluate(test_ds, metric_key_prefix="test")
-            print(f"[TEST] {test_metrics}")
-            _log_line(log_path, f"test_metrics={json.dumps(_json_safe_metrics(test_metrics), sort_keys=True)}")
-            preds = trainer.predict(test_ds)
-            pred_logits = preds.predictions[0] if isinstance(preds.predictions, (tuple, list)) else preds.predictions
-            y_pred = pred_logits.argmax(-1)
-            y_true = build_common_labels(test_df, raw2common_map, label2id)
-            write_test_report(out_dir, test_df, y_true, y_pred, id2label)
-        else:
-            try:
-                test_ds = AudioDS(test_df, extractor, sr, max_seconds, {**raw2common_map}, label2id)
-                test_metrics = trainer.evaluate(test_ds, metric_key_prefix="test")
-                print(f"[TEST] {test_metrics}")
-                _log_line(log_path, f"test_metrics={json.dumps(_json_safe_metrics(test_metrics), sort_keys=True)}")
-                preds = trainer.predict(test_ds)
-                pred_logits = preds.predictions[0] if isinstance(preds.predictions, (tuple, list)) else preds.predictions
-                y_pred = pred_logits.argmax(-1)
-                y_true = build_common_labels(test_df, raw2common_map, label2id)
-                write_test_report(out_dir, test_df, y_true, y_pred, id2label)
-            except (RuntimeError, MemoryError) as e:
-                if _is_oom_error(e):
-                    _log_line(log_path, f"oom_abort_eval error={str(e).splitlines()[0]}")
-                    print("[ERROR] Out of memory during evaluation. Skipping test eval.")
-                else:
-                    raise
+        test_ds = AudioDS(test_df, extractor, sr, max_seconds, {**raw2common_map}, label2id)
+        test_metrics = trainer.evaluate(test_ds, metric_key_prefix="test")
+        print(f"[TEST] {test_metrics}")
+        _log_line(log_path, f"test_metrics={json.dumps(_json_safe_metrics(test_metrics), sort_keys=True)}")
+        preds = trainer.predict(test_ds)
+        pred_logits = preds.predictions[0] if isinstance(preds.predictions, (tuple, list)) else preds.predictions
+        y_pred = pred_logits.argmax(-1)
+        y_true = build_common_labels(test_df, raw2common_map, label2id)
+        write_test_report(out_dir, test_df, y_true, y_pred, id2label)
     else:
         print("[INFO] Skipped evaluation (skip_eval=True)")
     if not skip_save:
