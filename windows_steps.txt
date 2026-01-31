@@ -21,6 +21,10 @@
    - `python src/train_hubert_cls.py --datasets RAVDESS CREMAD --config configs/hubert_large_4070.json`
    - Outputs go to `models/RAVDESS+CREMAD_hubert_cls_large_4070_2026-01-28/` and will not touch old checkpoints.
 
+5.1) Start a fresh run (new folder) and train:
+   - Update `run_name` in `configs/hubert_large_4070.json` (e.g., `large_4070_2026-02-01`), then run:
+   - `python src/train_hubert_cls.py --datasets RAVDESS CREMAD --config configs/hubert_large_4070.json`
+
 6) Resume if needed:
    - `python src/train_hubert_cls.py --datasets RAVDESS CREMAD --config configs/hubert_large_4070.json --resume_from_checkpoint models\RAVDESS+CREMAD_hubert_cls_large_4070_2026-01-28\checkpoint-XXXX`
 
