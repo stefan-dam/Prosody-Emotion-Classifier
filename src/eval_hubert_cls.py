@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 import torch
 from torch.utils.data import DataLoader
-from transformers import AutoFeatureExtractor, AutoModelForAudioClassification
+from transformers import AutoConfig, AutoFeatureExtractor, AutoModelForAudioClassification
 
 import train_hubert_cls as thc
 
@@ -81,6 +81,36 @@ def _compute_metrics_from_cm(cm):
     return acc, macro_f1, uar, recall, f1
 
 
+def _load_feature_extractor(model_dir: Path, override_name: str = None):
+    try:
+        return AutoFeatureExtractor.from_pretrained(str(model_dir))
+    except OSError as e:
+        msg = str(e)
+        if "preprocessor_config.json" not in msg:
+            raise
+
+    fallback_name = override_name
+    if not fallback_name:
+        try:
+            cfg = AutoConfig.from_pretrained(str(model_dir))
+            fallback_name = getattr(cfg, "_name_or_path", None) or getattr(cfg, "name_or_path", None)
+        except Exception:
+            fallback_name = None
+
+    if not fallback_name:
+        raise OSError(
+            "Missing preprocessor_config.json and no fallback model name found. "
+            "Pass --feature_extractor with the base model name (e.g., superb/hubert-large-superb-er)."
+        )
+
+    extractor = AutoFeatureExtractor.from_pretrained(fallback_name)
+    try:
+        extractor.save_pretrained(str(model_dir))
+    except Exception:
+        pass
+    return extractor
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--datasets", nargs="+", required=True, choices=["RAVDESS", "CREMAD", "IEMOCAP"])
@@ -90,6 +120,7 @@ def main():
     parser.add_argument("--max_seconds", type=int, default=2, help="Pad/truncate audio to this many seconds")
     parser.add_argument("--batch_size", type=int, default=1)
     parser.add_argument("--device", default="cpu")
+    parser.add_argument("--feature_extractor", default=None, help="Fallback base model name for feature extractor")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--out_json", default="eval_report.json")
     args = parser.parse_args()
@@ -102,7 +133,7 @@ def main():
     if not model_dir.exists():
         raise FileNotFoundError(f"Model directory not found: {model_dir}")
 
-    extractor = AutoFeatureExtractor.from_pretrained(str(model_dir))
+    extractor = _load_feature_extractor(model_dir, args.feature_extractor)
     model = AutoModelForAudioClassification.from_pretrained(str(model_dir))
     model.eval()
     model.to(device)

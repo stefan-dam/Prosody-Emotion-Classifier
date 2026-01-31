@@ -25,4 +25,4 @@
    - `python src/train_hubert_cls.py --datasets RAVDESS CREMAD --config configs/hubert_large_4070.json --resume_from_checkpoint models\RAVDESS+CREMAD_hubert_cls_large_4070_2026-01-28\checkpoint-XXXX`
 
 7) Evaluate the best (saved) model with ultra-light settings (CPU + small sample):
-   - `python src/eval_hubert_cls.py --datasets RAVDESS CREMAD --model_dir "models\RAVDESS+CREMAD_hubert_cls_large_4070_2026-01-28" --split val --max_samples 50 --max_seconds 2 --batch_size 1 --device cpu`
+   - `python src/eval_hubert_cls.py --datasets RAVDESS CREMAD --model_dir "models\RAVDESS+CREMAD_hubert_cls_large_4070_2026-01-28" --split val --max_samples 50 --max_seconds 2 --batch_size 1 --device cpu --feature_extractor superb/hubert-large-superb-er`
