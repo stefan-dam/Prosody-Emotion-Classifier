@@ -426,6 +426,14 @@ def main():
     max_steps = int(cfg.get("max_steps", -1))  # -1 means use epochs
     eval_batch_size = int(cfg.get("eval_batch_size", cfg.get("batch_size", 2)))
     eval_accumulation_steps = int(cfg.get("eval_accumulation_steps", 1))
+    eval_max_samples = int(cfg.get("eval_max_samples", 0))
+    eval_max_seconds = int(cfg.get("eval_max_seconds", max_seconds))
+    if eval_max_seconds < 1:
+        eval_max_seconds = max_seconds
+    test_max_samples = int(cfg.get("test_max_samples", 0))
+    test_max_seconds = int(cfg.get("test_max_seconds", max_seconds))
+    if test_max_seconds < 1:
+        test_max_seconds = max_seconds
     post_eval = bool(cfg.get("post_train_eval", False))
     post_eval_split = str(cfg.get("post_train_eval_split", "val")).lower()
     post_eval_max_samples = int(cfg.get("post_train_eval_max_samples", 0))
@@ -583,7 +591,12 @@ def main():
         augment_cfg=augment_cfg,
         training=True,
     )
-    val_ds = AudioDS(val_df, extractor, sr, max_seconds, {**raw2common_map}, label2id)
+    eval_df = _maybe_sample_df(val_df, eval_max_samples, seed)
+    if len(eval_df) != len(val_df):
+        _log_line(log_path, f"eval_subset_size={len(eval_df)} eval_max_samples={eval_max_samples} eval_max_seconds={eval_max_seconds}")
+    else:
+        _log_line(log_path, f"eval_subset_size={len(eval_df)} eval_max_seconds={eval_max_seconds}")
+    val_ds = AudioDS(eval_df, extractor, sr, eval_max_seconds, {**raw2common_map}, label2id)
 
     dataset_tag = "+".join(dataset_names)
     run_name = cfg.get("run_name")
@@ -644,6 +657,7 @@ def main():
         save_steps=save_steps,
         eval_accumulation_steps=eval_accumulation_steps,
         gradient_checkpointing=grad_ckpt,
+        disable_tqdm=False,
     )
 
     callbacks = [FileLoggerCallback(log_path)]
@@ -739,15 +753,20 @@ def main():
     did_eval = False
     # Evaluate after saving to avoid losing checkpoints if eval crashes
     if not skip_eval:
-        test_ds = AudioDS(test_df, extractor, sr, max_seconds, {**raw2common_map}, label2id)
+        test_df_eval = _maybe_sample_df(test_df, test_max_samples, seed)
+        if len(test_df_eval) != len(test_df):
+            _log_line(log_path, f"test_subset_size={len(test_df_eval)} test_max_samples={test_max_samples} test_max_seconds={test_max_seconds}")
+        else:
+            _log_line(log_path, f"test_subset_size={len(test_df_eval)} test_max_seconds={test_max_seconds}")
+        test_ds = AudioDS(test_df_eval, extractor, sr, test_max_seconds, {**raw2common_map}, label2id)
         test_metrics = trainer.evaluate(test_ds, metric_key_prefix="test")
         print(f"[TEST] {test_metrics}")
         _log_eval_metrics(log_path, test_metrics, "test")
         preds = trainer.predict(test_ds)
         pred_logits = preds.predictions[0] if isinstance(preds.predictions, (tuple, list)) else preds.predictions
         y_pred = pred_logits.argmax(-1)
-        y_true = build_common_labels(test_df, raw2common_map, label2id)
-        write_test_report(out_dir, test_df, y_true, y_pred, id2label)
+        y_true = build_common_labels(test_df_eval, raw2common_map, label2id)
+        write_test_report(out_dir, test_df_eval, y_true, y_pred, id2label)
         did_eval = True
     elif post_eval:
         eval_df = val_df if post_eval_split == "val" else test_df
