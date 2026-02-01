@@ -426,6 +426,7 @@ def main():
     lr_scheduler_type = str(cfg.get("lr_scheduler_type", "linear"))
     warmup_ratio = float(cfg.get("warmup_ratio", 0.1))
     ignore_data_skip = bool(cfg.get("ignore_data_skip", True))
+    reset_optimizer_on_resume = bool(cfg.get("reset_optimizer_on_resume", True))
     max_seconds = int(cfg.get("max_seconds", 3))
     max_steps = int(cfg.get("max_steps", -1))  # -1 means use epochs
     eval_batch_size = int(cfg.get("eval_batch_size", cfg.get("batch_size", 2)))
@@ -567,11 +568,12 @@ def main():
     _log_line(log_path, f"train_size={len(train_df)} val_size={len(val_df)} test_size={len(test_df)} balance_datasets={balance_flag} train_fraction={train_fraction}")
     _log_line(
         log_path,
-        f"learning_rate={learning_rate} lr_scheduler_type={lr_scheduler_type} warmup_ratio={warmup_ratio} ignore_data_skip={ignore_data_skip}",
+        f"learning_rate={learning_rate} lr_scheduler_type={lr_scheduler_type} warmup_ratio={warmup_ratio} ignore_data_skip={ignore_data_skip} reset_optimizer_on_resume={reset_optimizer_on_resume}",
     )
     print(
         f"[INFO] learning_rate={learning_rate:.6g} "
-        f"lr_scheduler_type={lr_scheduler_type} warmup_ratio={warmup_ratio} ignore_data_skip={ignore_data_skip}"
+        f"lr_scheduler_type={lr_scheduler_type} warmup_ratio={warmup_ratio} "
+        f"ignore_data_skip={ignore_data_skip} reset_optimizer_on_resume={reset_optimizer_on_resume}"
     )
     log_label_distributions(train_df, raw2common_map, label_set, "train", log_path)
     log_label_distributions(val_df, raw2common_map, label_set, "val", log_path)
@@ -714,6 +716,15 @@ def main():
 
     if args.resume_from_checkpoint:
         ignore_rng_state = bool(cfg.get("ignore_rng_state_on_resume", True))
+        if reset_optimizer_on_resume:
+            # Keep configured LR/scheduler on resume instead of loading checkpoint optimizer/scheduler state.
+            def _skip_load_optimizer_and_scheduler(_resume_from_checkpoint):
+                print(
+                    f"[warn] Skipping optimizer/scheduler state load from checkpoint; "
+                    f"using configured learning_rate={learning_rate:.6g} and lr_scheduler_type={lr_scheduler_type}."
+                )
+                return None
+            trainer._load_optimizer_and_scheduler = _skip_load_optimizer_and_scheduler
         # Allow numpy types for checkpoint RNG state on PyTorch 2.6+ (trusted local checkpoints).
         try:
             import numpy as _np

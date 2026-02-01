@@ -16,6 +16,7 @@
   "lr_scheduler_type": "constant",
   "warmup_ratio": 0.0,
   "ignore_data_skip": true,
+  "reset_optimizer_on_resume": true,
   "logging_steps": 20,
   "epochs": 60,
   "max_steps": 8000,
