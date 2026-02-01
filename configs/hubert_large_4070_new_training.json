@@ -15,8 +15,10 @@
   "learning_rate": 1e-4,
   "lr_scheduler_type": "constant",
   "warmup_ratio": 0.0,
-  "ignore_data_skip": true,
-  "reset_optimizer_on_resume": true,
+  "ignore_data_skip": false,
+  "reset_optimizer_on_resume": false,
+  "ignore_rng_state_on_resume": false,
+  "strict_checkpoint_resume": true,
   "dataloader_num_workers": 4,
   "dataloader_persistent_workers": true,
   "dataloader_pin_memory": true,
@@ -56,6 +58,7 @@
   "post_train_eval_batch_size": 1,
   "post_train_eval_accumulation_steps": 1,
   "post_train_eval_max_seconds": 5,
-  "log_path": "logs/hubert_large_4070_2026-01-28.log",
-  "run_name": "large_4070_2026-01-28"
+  "output_dir": "models/new_training",
+  "log_path": "logs/new_training.log",
+  "run_name": "new_training"
 }

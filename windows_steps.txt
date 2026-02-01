@@ -17,16 +17,13 @@
    - `python src/make_splits.py RAVDESS --seed 42`
    - `python src/make_splits.py CREMAD --seed 42`
 
-5) Train the new large HuBERT model (separate output folder):
-   - `python src/train_hubert_cls.py --datasets RAVDESS CREMAD --config configs/hubert_large_4070.json`
-   - Outputs go to `models/RAVDESS+CREMAD_hubert_cls_large_4070_2026-01-28/` and will not touch old checkpoints.
-
-5.1) Start a fresh run (new folder) and train:
-   - Update `run_name` in `configs/hubert_large_4070.json` (e.g., `large_4070_2026-02-01`), then run:
-   - `python src/train_hubert_cls.py --datasets RAVDESS CREMAD --config configs/hubert_large_4070.json`
+5) Start a fresh run in a dedicated folder `models/new_training` (same training hyperparameters):
+   - `python src/train_hubert_cls.py --datasets RAVDESS CREMAD --config configs/hubert_large_4070_new_training.json`
+   - This writes checkpoints and model files only under `models/new_training`.
 
 6) Resume if needed:
-   - `python src/train_hubert_cls.py --datasets RAVDESS CREMAD --config configs/hubert_large_4070.json --resume_from_checkpoint models\RAVDESS+CREMAD_hubert_cls_large_4070_2026-01-28\checkpoint-2000`
+   - `python src/train_hubert_cls.py --datasets RAVDESS CREMAD --config configs/hubert_large_4070_new_training.json --resume_from_checkpoint models\new_training\checkpoint-2000`
+   - Resume is strict pause/resume in this config: optimizer/scheduler/RNG/data-skip states are restored from checkpoint, and training aborts if a checkpoint is incomplete.
 
 7) Evaluate the best (saved) model with ultra-light settings (CPU + small sample):
-   - `python src/eval_hubert_cls.py --datasets RAVDESS CREMAD --model_dir "models\RAVDESS+CREMAD_hubert_cls_large_4070_2026-01-28" --split val --max_samples 50 --max_seconds 2 --batch_size 1 --device cpu --feature_extractor superb/hubert-large-superb-er`
+   - `python src/eval_hubert_cls.py --datasets RAVDESS CREMAD --model_dir "models\new_training" --split val --max_samples 50 --max_seconds 2 --batch_size 1 --device cpu --feature_extractor superb/hubert-large-superb-er`

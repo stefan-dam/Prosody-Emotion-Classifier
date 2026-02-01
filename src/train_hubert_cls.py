@@ -427,6 +427,7 @@ def main():
     warmup_ratio = float(cfg.get("warmup_ratio", 0.1))
     ignore_data_skip = bool(cfg.get("ignore_data_skip", True))
     reset_optimizer_on_resume = bool(cfg.get("reset_optimizer_on_resume", True))
+    strict_checkpoint_resume = bool(cfg.get("strict_checkpoint_resume", False))
     dataloader_num_workers = int(cfg.get("dataloader_num_workers", 4))
     dataloader_persistent_workers = bool(cfg.get("dataloader_persistent_workers", True))
     dataloader_pin_memory = bool(cfg.get("dataloader_pin_memory", True))
@@ -575,6 +576,7 @@ def main():
         log_path,
         f"learning_rate={learning_rate} lr_scheduler_type={lr_scheduler_type} warmup_ratio={warmup_ratio} "
         f"ignore_data_skip={ignore_data_skip} reset_optimizer_on_resume={reset_optimizer_on_resume} "
+        f"strict_checkpoint_resume={strict_checkpoint_resume} "
         f"dataloader_num_workers={dataloader_num_workers} dataloader_persistent_workers={dataloader_persistent_workers} "
         f"dataloader_pin_memory={dataloader_pin_memory}",
     )
@@ -582,6 +584,7 @@ def main():
         f"[INFO] learning_rate={learning_rate:.6g} "
         f"lr_scheduler_type={lr_scheduler_type} warmup_ratio={warmup_ratio} "
         f"ignore_data_skip={ignore_data_skip} reset_optimizer_on_resume={reset_optimizer_on_resume} "
+        f"strict_checkpoint_resume={strict_checkpoint_resume} "
         f"dataloader_num_workers={dataloader_num_workers} dataloader_persistent_workers={dataloader_persistent_workers} "
         f"dataloader_pin_memory={dataloader_pin_memory}"
     )
@@ -728,7 +731,17 @@ def main():
     )
 
     if args.resume_from_checkpoint:
-        trainer.args.ignore_data_skip = True
+        if strict_checkpoint_resume:
+            resume_dir = Path(args.resume_from_checkpoint)
+            required = ["trainer_state.json", "optimizer.pt", "scheduler.pt"]
+            missing = [name for name in required if not (resume_dir / name).exists()]
+            has_model = (resume_dir / "pytorch_model.bin").exists() or (resume_dir / "model.safetensors").exists()
+            if not has_model:
+                missing.append("pytorch_model.bin or model.safetensors")
+            if missing:
+                raise FileNotFoundError(
+                    f"Checkpoint is incomplete for strict resume: {resume_dir} missing {missing}"
+                )
         ignore_rng_state = bool(cfg.get("ignore_rng_state_on_resume", True))
         if reset_optimizer_on_resume:
             # Keep configured LR/scheduler on resume instead of loading checkpoint optimizer/scheduler state.
