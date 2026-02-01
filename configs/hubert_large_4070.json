@@ -12,7 +12,7 @@
   "test_max_seconds": 5,
   "fp16": false,
   "gradient_checkpointing": true,
-  "learning_rate": 4e-5,
+  "learning_rate": 1e-4,
   "logging_steps": 20,
   "epochs": 60,
   "max_steps": 8000,
