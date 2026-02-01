@@ -427,6 +427,9 @@ def main():
     warmup_ratio = float(cfg.get("warmup_ratio", 0.1))
     ignore_data_skip = bool(cfg.get("ignore_data_skip", True))
     reset_optimizer_on_resume = bool(cfg.get("reset_optimizer_on_resume", True))
+    dataloader_num_workers = int(cfg.get("dataloader_num_workers", 4))
+    dataloader_persistent_workers = bool(cfg.get("dataloader_persistent_workers", True))
+    dataloader_pin_memory = bool(cfg.get("dataloader_pin_memory", True))
     max_seconds = int(cfg.get("max_seconds", 3))
     max_steps = int(cfg.get("max_steps", -1))  # -1 means use epochs
     eval_batch_size = int(cfg.get("eval_batch_size", cfg.get("batch_size", 2)))
@@ -466,6 +469,8 @@ def main():
         raise ValueError("post_train_eval_split must be 'val' or 'test'.")
     if warmup_ratio < 0.0 or warmup_ratio > 1.0:
         raise ValueError("warmup_ratio must be in [0.0, 1.0].")
+    if dataloader_num_workers < 0:
+        raise ValueError("dataloader_num_workers must be >= 0.")
     if post_eval_max_samples < 0:
         raise ValueError("post_train_eval_max_samples must be >= 0.")
     if post_eval_batch_size < 1:
@@ -568,12 +573,17 @@ def main():
     _log_line(log_path, f"train_size={len(train_df)} val_size={len(val_df)} test_size={len(test_df)} balance_datasets={balance_flag} train_fraction={train_fraction}")
     _log_line(
         log_path,
-        f"learning_rate={learning_rate} lr_scheduler_type={lr_scheduler_type} warmup_ratio={warmup_ratio} ignore_data_skip={ignore_data_skip} reset_optimizer_on_resume={reset_optimizer_on_resume}",
+        f"learning_rate={learning_rate} lr_scheduler_type={lr_scheduler_type} warmup_ratio={warmup_ratio} "
+        f"ignore_data_skip={ignore_data_skip} reset_optimizer_on_resume={reset_optimizer_on_resume} "
+        f"dataloader_num_workers={dataloader_num_workers} dataloader_persistent_workers={dataloader_persistent_workers} "
+        f"dataloader_pin_memory={dataloader_pin_memory}",
     )
     print(
         f"[INFO] learning_rate={learning_rate:.6g} "
         f"lr_scheduler_type={lr_scheduler_type} warmup_ratio={warmup_ratio} "
-        f"ignore_data_skip={ignore_data_skip} reset_optimizer_on_resume={reset_optimizer_on_resume}"
+        f"ignore_data_skip={ignore_data_skip} reset_optimizer_on_resume={reset_optimizer_on_resume} "
+        f"dataloader_num_workers={dataloader_num_workers} dataloader_persistent_workers={dataloader_persistent_workers} "
+        f"dataloader_pin_memory={dataloader_pin_memory}"
     )
     log_label_distributions(train_df, raw2common_map, label_set, "train", log_path)
     log_label_distributions(val_df, raw2common_map, label_set, "val", log_path)
@@ -690,6 +700,9 @@ def main():
         save_total_limit=None,
         save_steps=save_steps,
         eval_accumulation_steps=eval_accumulation_steps,
+        dataloader_num_workers=dataloader_num_workers,
+        dataloader_persistent_workers=dataloader_persistent_workers if dataloader_num_workers > 0 else False,
+        dataloader_pin_memory=dataloader_pin_memory,
         gradient_checkpointing=grad_ckpt,
         disable_tqdm=False,
     )
@@ -715,6 +728,7 @@ def main():
     )
 
     if args.resume_from_checkpoint:
+        trainer.args.ignore_data_skip = True
         ignore_rng_state = bool(cfg.get("ignore_rng_state_on_resume", True))
         if reset_optimizer_on_resume:
             # Keep configured LR/scheduler on resume instead of loading checkpoint optimizer/scheduler state.
