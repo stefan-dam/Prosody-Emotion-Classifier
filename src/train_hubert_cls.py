@@ -422,6 +422,10 @@ def main():
 
     cfg = json.load(open(args.config))
     sr = int(cfg["sample_rate"])
+    learning_rate = float(cfg.get("learning_rate", 1e-5))
+    lr_scheduler_type = str(cfg.get("lr_scheduler_type", "linear"))
+    warmup_ratio = float(cfg.get("warmup_ratio", 0.1))
+    ignore_data_skip = bool(cfg.get("ignore_data_skip", True))
     max_seconds = int(cfg.get("max_seconds", 3))
     max_steps = int(cfg.get("max_steps", -1))  # -1 means use epochs
     eval_batch_size = int(cfg.get("eval_batch_size", cfg.get("batch_size", 2)))
@@ -459,6 +463,8 @@ def main():
 
     if post_eval_split not in ("val", "test"):
         raise ValueError("post_train_eval_split must be 'val' or 'test'.")
+    if warmup_ratio < 0.0 or warmup_ratio > 1.0:
+        raise ValueError("warmup_ratio must be in [0.0, 1.0].")
     if post_eval_max_samples < 0:
         raise ValueError("post_train_eval_max_samples must be >= 0.")
     if post_eval_batch_size < 1:
@@ -471,6 +477,22 @@ def main():
     if fp16_flag and not torch.cuda.is_available():
         print("[warn] fp16 requested but CUDA is not available; disabling fp16.")
         fp16_flag = False
+
+    if args.resume_from_checkpoint:
+        resume_path = Path(args.resume_from_checkpoint)
+        if not resume_path.exists():
+            raise FileNotFoundError(f"Checkpoint path does not exist: {resume_path}")
+        state_path = resume_path / "trainer_state.json"
+        if state_path.exists() and max_steps > 0:
+            try:
+                resumed_step = int(json.loads(state_path.read_text()).get("global_step", 0))
+                if resumed_step >= max_steps:
+                    print(
+                        f"[warn] resume checkpoint global_step={resumed_step} but max_steps={max_steps}. "
+                        "Training can end immediately unless you increase max_steps."
+                    )
+            except Exception as e:
+                print(f"[warn] Could not read trainer_state.json from {resume_path}: {e}")
 
     # Build the label set from selected datasets unless explicitly overridden
     label_set_cfg = cfg.get("label_set", cfg.get("common_labels"))
@@ -543,6 +565,14 @@ def main():
 
     validate_tables(train_df, val_df, test_df, raw2common_map, label_set)
     _log_line(log_path, f"train_size={len(train_df)} val_size={len(val_df)} test_size={len(test_df)} balance_datasets={balance_flag} train_fraction={train_fraction}")
+    _log_line(
+        log_path,
+        f"learning_rate={learning_rate} lr_scheduler_type={lr_scheduler_type} warmup_ratio={warmup_ratio} ignore_data_skip={ignore_data_skip}",
+    )
+    print(
+        f"[INFO] learning_rate={learning_rate:.6g} "
+        f"lr_scheduler_type={lr_scheduler_type} warmup_ratio={warmup_ratio} ignore_data_skip={ignore_data_skip}"
+    )
     log_label_distributions(train_df, raw2common_map, label_set, "train", log_path)
     log_label_distributions(val_df, raw2common_map, label_set, "val", log_path)
     log_label_distributions(test_df, raw2common_map, label_set, "test", log_path)
@@ -632,7 +662,7 @@ def main():
         output_dir=str(out_dir),
         per_device_train_batch_size=int(cfg.get("batch_size", 2)),
         per_device_eval_batch_size=eval_batch_size,
-        learning_rate=float(cfg.get("learning_rate", 1e-5)),
+        learning_rate=learning_rate,
         num_train_epochs=int(cfg.get("epochs", 3)),
         max_steps=max_steps,
         gradient_accumulation_steps=grad_accum_steps,
@@ -645,13 +675,15 @@ def main():
         remove_unused_columns=False,
         fp16=fp16_flag,
         bf16=bf16_flag,
-        warmup_ratio=0.1,
+        warmup_ratio=warmup_ratio,
+        lr_scheduler_type=lr_scheduler_type,
         weight_decay=0.01,
         logging_steps=int(cfg.get("logging_steps", 20)),
         report_to=[],
         seed=seed,
         max_grad_norm=0.5,
         optim="adamw_torch",
+        ignore_data_skip=ignore_data_skip,
         logging_nan_inf_filter=False,
         save_total_limit=None,
         save_steps=save_steps,
